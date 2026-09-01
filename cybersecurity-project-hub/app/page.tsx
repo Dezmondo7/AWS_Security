@@ -87,7 +87,7 @@ function App() {
         {searchOpen && <div className="search-panel"><Search size={17} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search write-ups, tags, projects..." /><button onClick={() => { setQuery(''); setSearchOpen(false) }} aria-label="Close search"><X size={16} /></button></div>}
 
         <div className="page-wrap">
-          <div className="page-heading"><div><p className="kicker"><span className="pulse" /> SYSTEM ONLINE / US-EAST-1</p><h1>Good morning, Dale.</h1><p className="lede">Your security knowledge base is up to date. Here&apos;s what&apos;s happening across your workspace.</p></div><div className="heading-date"><span>MONDAY</span><strong>01 <small>SEP</small></strong><span>2026</span></div></div>
+          <div className="page-heading"><div><p className="kicker"><span className="pulse" /> SYSTEM ONLINE / EU-WEST-2 </p><h1>Good morning, Dale.</h1><p className="lede">Your security knowledge base is up to date. Here&apos;s what&apos;s happening across your workspace.</p></div><div className="heading-date"><span>MONDAY</span><strong>01 <small>SEP</small></strong><span>2026</span></div></div>
 
           <div className="posture-banner"><div className="posture-icon"><LockKeyhole size={19} /></div><div><strong>Security posture: <span>Healthy</span></strong><p>All workspace controls are operating within baseline.</p></div><div className="posture-meta"><span><CheckCircle2 size={14} /> 12 controls passing</span><button>View posture <ArrowUpRight size={14} /></button></div></div>
 
