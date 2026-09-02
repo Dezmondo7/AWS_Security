@@ -42,4 +42,6 @@ export default function WriteUps() {
               <h3>{n[0]}</h3><p>{n[4].map(t=><span key={t}><Hash size={11}/>{t} </span>)} · {n[2]}</p></div>
               <button className={`bookmark-button ${saved.includes(n[0])?'saved':''}`} aria-label={`Bookmark ${n[0]}`} onClick={()=>setSaved(s=>s.includes(n[0])?s.filter(x=>x!==n[0]):[...s,n[0]])}><Bookmark size={17} fill={saved.includes(n[0])?'currentColor':'none'}/></button>
               </DataCard>)}</div>
-              </WorkspaceShell>}
+              </WorkspaceShell>
+              
+            }
