@@ -2,67 +2,6 @@
 import { Bookmark, FileText, Hash, Search, SlidersHorizontal } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { DataCard, DetailModal, PageHeading, SectionLabel, Tag, WorkspaceShell } from '../../components/ui/app-shell'
+import notes from '@/data/write-ups.json'
 
-const notes = [
-  ['Designing private connectivity patterns with AWS Transit Gateway', 'NETWORKING', '8 min read', 'Sep 01, 2026', ['Transit Gateway', 'VPC']],
-  ['Identity boundaries for multi-account AWS environments', 'SECURITY', '12 min read', 'Aug 29, 2026', ['IAM', 'Organizations']],
-  ['A practical guide to CloudTrail data events', 'OBSERVABILITY', '6 min read', 'Aug 24, 2026', ['CloudTrail', 'Audit']],
-  ['Hardening S3 buckets with policy conditions', 'SECURITY', '10 min read', 'Aug 18, 2026', ['S3', 'IAM']],
-  ['Threat modeling an event-driven architecture', 'ARCHITECTURE', '14 min read', 'Aug 12, 2026', ['EventBridge', 'Threat model']]
-]
-
-export default function WriteUps() {
-  const [q, setQ] = useState(''),
-    [filter, setFilter] = useState('ALL'),
-    [saved, setSaved] = useState<string[]>([]),
-    [selected, setSelected] = useState<(typeof notes)[number] | null>(null);
-
-  const visible = useMemo(() => notes.filter(n => (filter === 'ALL' || n[1] === filter) && `${n[0]} ${n[4].join(' ')}`.toLowerCase().includes(q.toLowerCase())), [q, filter]);
-
-  return <WorkspaceShell title="Write-ups">
-    <PageHeading kicker="KNOWLEDGE BASE / 24 PUBLISHED" heading="Write-ups" lede="Field notes, architecture decisions, and security research from the cloud-security workspace." action={<button className="new-button">
-      <FileText size={15} /> New write-up</button>} />
-
-    <div className="toolbar">
-      <div className="inline-search"><Search size={16} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search notes and tags..." /></div>
-
-      <button className="filter-button" onClick={() => setFilter(filter === 'ALL' ? 'SECURITY' : 'ALL')}>
-        <SlidersHorizontal size={14} /> {filter === 'ALL' ? 'All topics' : filter}
-      </button>
-    </div>
-
-    <div className="section-header compact">
-      <div><SectionLabel>ARCHIVE</SectionLabel>
-        <h2>{visible.length} notes in view</h2>
-      </div>
-      <span className="mono">SORT: RECENT</span>
-    </div>
-
-    <div className="notes-list page-list">{visible.map(n => <DataCard key={n[0]} className="note-row" onClick={() => setSelected(n)}>
-      <div className="note-type"><FileText size={17} />
-      </div>
-
-      <div className="note-info">
-        <div><Tag tone={n[1] === 'SECURITY' ? 'orange' : 'cyan'}>{n[1]}</Tag>
-          <span className="mono">{n[3]}</span>
-        </div>
-
-        <h3>{n[0]}</h3>
-        <p>{n[4].map(t => <span key={t}><Hash size={11} />{t} </span>)} · {n[2]}</p>
-      </div>
-
-      <button className={`bookmark-button ${saved.includes(n[0]) ? 'saved' : ''}`} aria-label={`Bookmark ${n[0]}`} onClick={e => {
-        e.stopPropagation();
-        setSaved(s => s.includes(n[0]) ? s.filter(x => x !== n[0]) : [...s, n[0]])
-      }}><Bookmark size={17} fill={saved.includes(n[0]) ? 'currentColor' : 'none'} />
-      </button></DataCard>)}
-    </div>
-
-    {selected && <DetailModal open onClose={() => setSelected(null)} title={selected[0]} category={selected[1]} image="https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80">
-      <p className="modal-lede">A field note from the ARC//SEC knowledge base, published {selected[3]}.</p>
-      <p className="modal-copy">This write-up documents the reasoning, trade-offs, and practical AWS controls behind the approach, with implementation guidance for security-minded teams.</p>
-      <div className="modal-facts"><span>TOPICS<strong>{selected[4].join(' · ')}</strong></span><span>READ TIME<strong>{selected[2]}</strong></span></div>
-
-    </DetailModal>}
-  </WorkspaceShell>
-}
+export default function WriteUps(){const[q,setQ]=useState(''),[filter,setFilter]=useState('ALL'),[saved,setSaved]=useState<string[]>([]),[selected,setSelected]=useState<(typeof notes)[number]|null>(null);const visible=useMemo(()=>notes.filter(n=>(filter==='ALL'||n.category===filter)&&`${n.title} ${n.tags.join(' ')}`.toLowerCase().includes(q.toLowerCase())),[q,filter]);return <WorkspaceShell title="Write-ups"><PageHeading kicker="KNOWLEDGE BASE / 24 PUBLISHED" heading="Write-ups" lede="Field notes, architecture decisions, and security research from the cloud-security workspace." action={<button className="new-button"><FileText size={15}/> New write-up</button>}/><div className="toolbar"><div className="inline-search"><Search size={16}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search notes and tags..."/></div><button className="filter-button" onClick={()=>setFilter(filter==='ALL'?'SECURITY':'ALL')}><SlidersHorizontal size={14}/> {filter==='ALL'?'All topics':filter}</button></div><div className="section-header compact"><div><SectionLabel>ARCHIVE</SectionLabel><h2>{visible.length} notes in view</h2></div><span className="mono">SORT: RECENT</span></div><div className="notes-list page-list">{visible.map(n=><DataCard key={n.title} className="note-row" onClick={()=>setSelected(n)}><div className="note-type"><FileText size={17}/></div><div className="note-info"><div><Tag tone={n.category==='SECURITY'?'orange':'cyan'}>{n.category}</Tag><span className="mono">{n.date}</span></div><h3>{n.title}</h3><p>{n.tags.map(t=><span key={t}><Hash size={11}/>{t} </span>)} · {n.readTime}</p></div><button className={`bookmark-button ${saved.includes(n.title)?'saved':''}`} aria-label={`Bookmark ${n.title}`} onClick={e=>{e.stopPropagation();setSaved(s=>s.includes(n.title)?s.filter(x=>x!==n.title):[...s,n.title])}}><Bookmark size={17} fill={saved.includes(n.title)?'currentColor':'none'}/></button></DataCard>)}</div>{selected&&<DetailModal open onClose={()=>setSelected(null)} title={selected.title} category={selected.category} image={selected.image}><p className="modal-lede">{selected.detail}</p><p className="modal-copy">An archived field note for the cloud-security workspace, with practical context and decisions you can reuse in your own AWS environment.</p><div className="modal-facts"><span>TOPICS<strong>{selected.sections.join(' · ')}</strong></span><span>READ TIME<strong>{selected.readTime}</strong></span><span>PUBLISHED<strong>{selected.date}</strong></span></div></DetailModal>}</WorkspaceShell>}

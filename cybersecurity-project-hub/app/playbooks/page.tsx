@@ -1,54 +1,49 @@
 'use client'
-import { ArrowUpRight, CheckCircle2, Clock3, Play, Terminal } from 'lucide-react'
+import { ArrowUpRight, FolderKanban, GitBranch, ShieldCheck, Users } from 'lucide-react'
 import { useState } from 'react'
-import { DataCard, DetailModal, PageHeading, SectionLabel, Tag, WorkspaceShell } from '../../components/ui/app-shell'
+import { DataCard, DetailModal, Metric, PageHeading, SectionLabel, Tag, WorkspaceShell } from '../../components/ui/app-shell'
+import projects from '@/data/projects.json'
 
-const playbooks = [
-    ['Incident response: exposed access key', 'SECURITY', '8 steps', '12 min', 'Ready'],
-    ['AWS account compromise triage', 'RESPONSE', '11 steps', '25 min', 'Ready'],
-    ['Rotate secrets without downtime', 'OPERATIONS', '6 steps', '9 min', 'In review'],
-    ['Contain a public S3 bucket', 'SECURITY', '7 steps', '14 min', 'Ready'],
-    ['Evidence collection for IR', 'FORENSICS', '9 steps', '18 min', 'Ready'],
-    ['Deploy a detective control', 'GOVERNANCE', '5 steps', '11 min', 'Draft']
-]
+export default function Projects() {
+    const [selected, setSelected] = useState<(typeof projects)[number] | null>(null);
 
+    return <WorkspaceShell title="Projects">
+        <PageHeading kicker="DELIVERY / 06 ACTIVE PROJECTS" heading="Projects" lede="Track architecture work, security initiatives, and the systems moving from idea to production." action={<button className="new-button">
+            <FolderKanban size={15} /> New project</button>} />
 
-export default function Playbooks() {
-    const [ran, setRan] = useState<string | null>(null);
-    const [selected, setSelected] = useState<(typeof playbooks)[number] | null>(null);
-
-    return <WorkspaceShell title="Playbooks">
-        <PageHeading kicker="RUNBOOKS / OPERATIONAL READINESS" heading="Playbooks" lede="Repeatable response procedures for the moments when speed, clarity, and evidence matter most." action={<button className="new-button"><Terminal size={15} /> New playbook</button>} />
+        <div className="metrics-grid">
+            <Metric label="Active projects" value="06" detail="this week" />
+            <Metric label="Contributors" value="08" detail="across teams" />
+            <Metric label="Controls shipped" value="42" detail="this quarter" />
+            <Metric label="Delivery health" value="94%" detail="vs last month" />
+        </div>
 
         <div className="section-header compact">
             <div>
-                <SectionLabel>RUNBOOK LIBRARY</SectionLabel>
-                <h2>Operational procedures</h2>
+                <SectionLabel>PORTFOLIO</SectionLabel>
+                <h2>Current initiatives</h2>
             </div>
-            <span className="mono">06 PLAYBOOKS</span>
+            <span className="mono">LAST UPDATED 2H AGO</span>
         </div>
 
-        <div className="playbook-grid">{playbooks.map(p => <DataCard key={p[0]} className="playbook-card" onClick={() => setSelected(p)}>
-            <div className="playbook-card-top">
-                <div className="terminal-mark">&gt;_</div>
-                <Tag tone={p[1] === 'SECURITY' ? 'orange' : 'cyan'}>{p[1]}</Tag>
+        <div className="project-grid">{projects.map(p => <DataCard key={p.title} className="project-card" onClick={() => setSelected(p)}>
+            <div className="project-card-top">
+                <div className="project-icon">
+                    <ShieldCheck size={18} />
+                </div>
+
+                <Tag tone={p.status === 'ACTIVE' ? 'cyan' : 'orange'}>{p.status}</Tag>
             </div>
 
-            <h3>{p[0]}</h3>
-            <div className="playbook-meta"><span><Terminal size={13} />{p[2]}</span><span><Clock3 size={13} />{p[3]}</span>
-            </div>
+            <h3>{p.title}</h3>
+            <p>{p.description}</p>
 
-            <div className="playbook-footer"><span>{ran === p[0] ? <><CheckCircle2 size={14} /> Started</> : p[4]}</span>
-                <button aria-label={`Run ${p[0]}`} onClick={(e) => { e.stopPropagation(); setRan(p[0]) }}>{ran === p[0] ? 'Running' : 'Run playbook'} <Play size={13} /></button>
-            </div>
-        </DataCard>)}
-        </div>
+            <div className="project-meta"><span><GitBranch size={13} />{p.stack}</span><span><Users size={13} />{p.owners}</span></div><div className="progress-track"><i style={{ width: p.progress }} /></div>
+            <div className="project-footer"><span>{p.progress} complete</span><ArrowUpRight size={15} /></div>
 
-        {selected && <DetailModal open onClose={() => setSelected(null)} title={selected[0]} category={selected[1]} image="https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80"><p className="modal-lede">A controlled, evidence-first procedure for {selected[0].toLowerCase()}.</p>
-            <p className="modal-copy">Follow each operational step, capture timestamps and affected resources, then hand off the resulting evidence to the incident owner.</p>
-
-            <div className="modal-facts"><span>PROCEDURE<strong>{selected[2]}</strong></span><span>ESTIMATE<strong>{selected[3]}</strong></span><span>STATE<strong>{selected[4]}</strong></span>
-            </div>
+        </DataCard>)}</div>
+        {selected && <DetailModal open onClose={() => setSelected(null)} title={selected.title} category={selected.status} image={selected.image}><p className="modal-lede">{selected.description}</p><p className="modal-copy">{selected.detail}</p>
+            <div className="modal-facts"><span>STACK<strong>{selected.stack}</strong></span><span>STATUS<strong>{selected.status}</strong></span><span>MILESTONES<strong>{selected.milestones}</strong></span></div>
 
         </DetailModal>}
     </WorkspaceShell>
