@@ -62,7 +62,7 @@ export default function WriteUps() {
       <p className="modal-lede">A field note from the ARC//SEC knowledge base, published {selected[3]}.</p>
       <p className="modal-copy">This write-up documents the reasoning, trade-offs, and practical AWS controls behind the approach, with implementation guidance for security-minded teams.</p>
       <div className="modal-facts"><span>TOPICS<strong>{selected[4].join(' · ')}</strong></span><span>READ TIME<strong>{selected[2]}</strong></span></div>
-      
-      </DetailModal>}
-      </WorkspaceShell>
+
+    </DetailModal>}
+  </WorkspaceShell>
 }
