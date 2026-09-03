@@ -33,9 +33,20 @@ export function WorkspaceShell({ children, title }: { children: React.ReactNode;
 export function PageHeading({ kicker, heading, lede, action }: { kicker: string; heading: string; lede: string; action?: React.ReactNode }) { return <div className="page-heading"><div><p className="kicker"><span className="pulse" /> {kicker}</p><h1>{heading}</h1><p className="lede">{lede}</p></div>{action}</div> }
 export function SectionLabel({ children }: { children: React.ReactNode }) { return <div className="section-label">{children}</div> }
 export function Tag({ children, tone = 'cyan' }: { children: React.ReactNode; tone?: 'cyan' | 'orange' }) { return <span className={`category ${tone}`}>{children}</span> }
-export function DataCard({ children, className = '' }: { children: React.ReactNode; className?: string }) { return <div className={`data-card ${className}`}>{children}</div> }
+export function DataCard({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) { return <div className={`data-card ${className}`} onClick={onClick}>{children}</div> }
 export function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <div className="metric-card"><span>{label}</span><strong>{value}</strong><div className="metric-trend"><em>+12%</em> {detail}</div></div> }
 export function IconLabel({ children }: { children: React.ReactNode }) { return <span className="icon-label">{children}</span> }
 
 export { navItems }
+
+export function DetailModal({ open, onClose, title, category, image, children }: { open: boolean; onClose: () => void; title: string; category: string; image: string; children: React.ReactNode }) {
+  if (!open) return null
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+      <button className="modal-close" onClick={onClose} aria-label="Close details"><span>×</span></button>
+      <img className="modal-image" src={image} alt="" />
+      <div className="modal-body"><Tag tone={category === 'SECURITY' || category === 'RESPONSE' ? 'orange' : 'cyan'}>{category}</Tag><h2 id="detail-modal-title">{title}</h2>{children}</div>
+    </section>
+  </div>
+}
 
