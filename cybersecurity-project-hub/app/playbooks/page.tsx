@@ -26,7 +26,7 @@ export default function Projects() {
             <span className="mono">LAST UPDATED 2H AGO</span>
         </div>
 
-        <div className="project-grid">{playbooks.map(p => <DataCard key={p.title} className="project-card" onClick={() => setSelected(p)}>
+        <div className="whitespace-pre-wrap project-grid">{playbooks.map(p => <DataCard key={p.title} className="project-card" onClick={() => setSelected(p)}>
             <div className="project-card-top">
                 <div className="project-icon">
                     <ShieldCheck size={18} />
