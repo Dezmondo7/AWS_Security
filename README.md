@@ -1,2 +1,2 @@
 # AWS_Security
-AWS Web Security platform containing detailed write ups and configurations of Amazon Web Services.
+AWS Web Security platform containing detailed projects, playbooks and write ups of Amazon Web Services.
