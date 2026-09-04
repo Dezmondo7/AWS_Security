@@ -21,7 +21,9 @@ export function WorkspaceShell({ children, title }: { children: React.ReactNode;
 
   return <main className="app-shell">
     <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
-      <div className="brand-row"><div className="brand-mark"><ShieldCheck size={19} /></div><div><strong>ARC//SEC</strong><span>PROJECT HUB</span></div><button className="icon-button mobile-close" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
+      <div className="brand-row"><div className="brand-mark"><ShieldCheck size={19} /></div>
+      <div><strong>ARC//SEC</strong><span>PROJECT HUB</span></div>
+      <button className="icon-button mobile-close" aria-label="Close navigation" onClick={() => setMobileNav(false)}><X size={18} /></button></div>
       <div className="workspace-card"><div className="workspace-dot" /><div><span className="eyebrow">WORKSPACE</span><strong>cloud-security</strong></div><ChevronRight size={15} /></div>
       <nav className="primary-nav" aria-label="Main navigation"><div className="section-label">Workspace</div>{navItems.map(({ label, href, icon: Icon, count }) => <Link key={label} href={href} onClick={() => setMobileNav(false)} className={`nav-item ${active === label ? 'active' : ''}`}><Icon size={17} /><span>{label}</span>{count && <em>{count}</em>}</Link>)}<div className="section-label">Library</div><button className="nav-item"><BookOpen size={17} /><span>Bookmarks</span><em>04</em></button><button className="nav-item"><Hash size={17} /><span>Topics</span></button></nav>
       <div className="sidebar-footer"><button className="nav-item"><Users size={17} /><span>Contributors</span></button><button className="nav-item"><Settings2 size={17} /><span>Settings</span></button><div className="profile"><div className="avatar">JD</div><div><strong>Dale Luke</strong><span>Administrator</span></div><div className="status-dot" /></div></div>

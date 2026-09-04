@@ -2,12 +2,12 @@
 import { ArrowUpRight, FolderKanban, GitBranch, ShieldCheck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { DataCard, DetailModal, Metric, PageHeading, SectionLabel, Tag, WorkspaceShell } from '../../components/ui/app-shell'
-import projects from '@/data/projects.json'
+import { projects } from '@/data/projects'
 
 export default function Projects() {
     const [selected, setSelected] = useState<(typeof projects)[number] | null>(null);
 
-    return <WorkspaceShell title="Projects">
+    return <WorkspaceShell title="smethings">
         <PageHeading kicker="DELIVERY / 06 ACTIVE PROJECTS" heading="Projects" lede="Track architecture work, security initiatives, and the systems moving from idea to production." action={<button className="new-button">
             <FolderKanban size={15} /> New project</button>} />
 

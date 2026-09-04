@@ -1,129 +1,107 @@
 
 export const playbooks = [
   {
-    title: "I IAM Over-privileged Role",
-    description: "Investigation: The EC2 instance allows unauthenticated HTTP GET requests through IMDSv1. The role has an attached over-privileged policy that has broad S3 access. ",
+    title: "IAM & IMDS Security Investigation: Over-Privileged EC2 Role",
+    description: "Investigating an over-privileged IAM instance profile and IMDSv1 misconfiguration on a production EC2 workload. ",
     category: "SECURITY",
     steps: "8 steps",
     estimate: "12 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1200&q=80",
-    detail: `It is time to investigate the misconfiguration. The lab environment has an EC2 instance running a simple web application.
+    detail: ` Phase 1: Environment & Instance Discovery
+--------------------------------------------------
+To establish baseline context and avoid hardcoding values, initial account and instance parameters were stored in local environment variables.
 
-
-First things first, save the account ID, as you will need it later. It is always convenient to save IDs and required details in environment variables.
-
-
-OP Role
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-Find the EC2 Instance
-Showing the THM lab instance
+$ echo "Account_id: \${ACCOUNT_ID}"
 
-List all instances in the account and save the instance ID.
+Next, all running EC2 instances were enumerated to isolate the target workload:
 
-
-OP Role
-$ aws ec2 describe-instances \
-    --filters "Name=instance-state-name,Values=running" \
-    --query "Reservations[*].Instances[*].{ID:InstanceId,Name:Tags[?Key=='Name'],State:State.Name}" \
+$ aws ec2 describe-instances \\
+    --filters "Name=instance-state-name,Values=running" \\
+    --query "Reservations[*].Instances[*].{ID:InstanceId,Name:Tags[?Key=='Name'],State:State.Name}" \\
     --output table
 
 ------------------------------------
-|         DescribeInstances        |
+|          DescribeInstances        |
 +----------------------+-----------+
 |          ID          |   State   |
 +----------------------+-----------+
 |  i-0a91fac348b8b44e1 |  running  |
 +----------------------+-----------+
-|              Name              |
-+---------+----------------------+
-|   Key   |        Value         |
-+---------+----------------------+
-|  Name   |  webapp-server       |
-+---------+----------------------+
-You have found the instance; now let us investigate.
-
-Check Instance Role
-First, grab the IAM instance profile details.
+|              Name                |
++---------+------------------------+
+|   Key   |        Value           |
++---------+------------------------+
+|  Name   |   webapp-server        |
++---------+------------------------+
 
 
-OP Role
-$ INSTANCE_ID=$(aws ec2 describe-instances \
-    --filters "Name=tag:Name,Values=webapp-server" "Name=instance-state-name,Values=running" \
-    --query "Reservations[0].Instances[0].InstanceId" \
+Phase 2: IAM Instance Profile & Policy Analysis
+--------------------------------------------------
+Once the target instance (\`webapp-server\`) was identified, the associated IAM instance profile and role were extracted for inspection:
+
+$ INSTANCE_ID=$(aws ec2 describe-instances \\
+    --filters "Name=tag:Name,Values=webapp-server" "Name=instance-state-name,Values=running" \\
+    --query "Reservations[0].Instances[0].InstanceId" \\
     --output text)
 
-$ PROFILE_ARN=$(aws ec2 describe-instances \
-    --instance-ids $INSTANCE_ID \
-    --query "Reservations[0].Instances[0].IamInstanceProfile.Arn" \
-    --output text)
- 
-$ PROFILE_NAME=$(echo $PROFILE_ARN | awk -F'/' '{print $NF}') 
-
-$ ROLE_NAME=$(aws iam get-instance-profile \
-    --instance-profile-name $PROFILE_NAME \
-    --query "InstanceProfile.Roles[0].RoleName" \
+$ PROFILE_ARN=$(aws ec2 describe-instances \\
+    --instance-ids \${INSTANCE_ID} \\
+    --query "Reservations[0].Instances[0].IamInstanceProfile.Arn" \\
     --output text)
 
-$ echo "Role Name: $ROLE_NAME"
+$ PROFILE_NAME=$(echo \${PROFILE_ARN} | awk -F'/' '{print \$NF}') 
 
+$ ROLE_NAME=$(aws iam get-instance-profile \\
+    --instance-profile-name \${PROFILE_NAME} \\
+    --query "InstanceProfile.Roles[0].RoleName" \\
+    --output text)
+
+$ echo "Role Name: \${ROLE_NAME}"
 Role Name: WebAppOverPrivRole-304038454789
 
-$ echo "Instance Profile: $PROFILE_NAME"
+Attached customer-managed and inline IAM policies were enumerated next:
 
-Instance Profile: WebAppOverPrivProfile-304038454789
-Review Permissions
-First, let us look at the role policies.
-
-Showing the IAM role attached to the instance
-
-
-OP Role
-$ aws iam list-attached-role-policies \
-    --role-name $ROLE_NAME \
+$ aws iam list-attached-role-policies \\
+    --role-name \${ROLE_NAME} \\
     --output json
 
 {
     "AttachedPolicies": [
-        {
-            "PolicyName": "[REDACTED]",
-            "PolicyArn": "arn:aws:iam::aws:policy/[REDACTED]"
-        },
         {
             "PolicyName": "WebAppOverPrivS3Policy-304038454789",
             "PolicyArn": "arn:aws:iam::304038454789:policy/WebAppOverPrivS3Policy-304038454789"
         }
     ]
 }
-It is a good practice to also check the inline policies.
 
+Inline policies were explicitly checked (as inline policies often obscure standard IAM auditing):
 
-OP Role
-$ aws iam list-role-policies \
-    --role-name $ROLE_NAME \
+$ aws iam list-role-policies \\
+    --role-name \${ROLE_NAME} \\
     --output table
 
 ------------------
 |ListRolePolicies|
 +----------------+
-From the outputs, you can see that a managed policy needs further investigation.
 
+Deep inspection of the default policy version for \`WebAppOverPrivS3Policy\` was performed:
 
-OP Role
-$ POLICY_ARN=$(aws iam list-attached-role-policies \
-    --role-name $ROLE_NAME \
-    --query "AttachedPolicies[?contains(PolicyName,'OverPriv')].PolicyArn" \
+$ POLICY_ARN=$(aws iam list-attached-role-policies \\
+    --role-name \${ROLE_NAME} \\
+    --query "AttachedPolicies[?contains(PolicyName,'OverPriv')].PolicyArn" \\
     --output text)
 
-$ POLICY_VERSION=$(aws iam get-policy \
-    --policy-arn $POLICY_ARN \
-    --query "Policy.DefaultVersionId" \
+$ POLICY_VERSION=$(aws iam get-policy \\
+    --policy-arn \${POLICY_ARN} \\
+    --query "Policy.DefaultVersionId" \\
     --output text)
 
-$ aws iam get-policy-version \
-    --policy-arn $POLICY_ARN \
-    --version-id $POLICY_VERSION \
-    --query "PolicyVersion.Document" \
+$ aws iam get-policy-version \\
+    --policy-arn \${POLICY_ARN} \\
+    --version-id \${POLICY_VERSION} \\
+    --query "PolicyVersion.Document" \\
     --output json
 
 {
@@ -139,97 +117,79 @@ $ aws iam get-policy-version \
         }
     ]
 }
-FINDING: The attached policy has broad S3 permissions. This means the role can perform any S3 action on any bucket.
 
-Test Over-Privileged Access
-Connect to the instance with SSM.
+[FINDING 1]: CRITICAL MISCONFIGURATION
+The attached IAM policy explicitly grants "s3:*" across "Resource": "*". This allows the web app role to perform any action on any S3 bucket in the account.
 
 
-OP Role
-$ aws ssm start-session --target $INSTANCE_ID
+Phase 3: Exploitation & BLAST RADIUS PROOF OF CONCEPT
+--------------------------------------------------
+To test the real-world impact of this policy, an AWS Systems Manager (SSM) session was opened directly to the instance:
 
+$ aws ssm start-session --target \${INSTANCE_ID}
 Starting session with SessionId: 304038454789-o6qvjy5lct8lrak7hlynnnv2oe
 
-sh-5.2$
-In the instance terminal, see what buckets you can list.
-
-
-OP Role
 sh-5.2$ aws s3 ls
-
 2026-03-24 09:28:41 thm-finance-reports-304038454789
 2026-03-24 09:28:41 thm-logs-archive-304038454789
 2026-03-24 09:28:41 thm-webapp-data-304038454789
-You should be able to list the web app bucket, but since the role is over-permissive, you can also list the finance bucket.
 
+While the web server should only access \`thm-webapp-data\`, the wild-card permissions permitted full access to restricted organizational assets:
 
-OP Role
 sh-5.2$ ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/meta-data/identity-credentials/ec2/info | grep AccountId | cut -d'"' -f4)
 
-sh-5.2$ aws s3 ls s3://thm-webapp-data-$ACCOUNT_ID/
-
-                           PRE assets/
-                           PRE config/
-                           PRE logs/
-
-sh-5.2$ aws s3 ls s3://thm-finance-reports-$ACCOUNT_ID/
-
+sh-5.2$ aws s3 ls s3://thm-finance-reports-\${ACCOUNT_ID}/
                            PRE confidential/
                            PRE flag/
 
-sh-5.2$ aws s3 cp s3://thm-finance-reports-$ACCOUNT_ID/flag/overpowered-role.txt -
+sh-5.2$ aws s3 cp s3://thm-finance-reports-\${ACCOUNT_ID}/flag/overpowered-role.txt -
+[CONFIDENTIAL DATA EXFILTRATED]
 
-[REDACTED]
-FINDING: This confirms that the instance role is over-permissive and can access every bucket in the account.
-
-Check IMDS Configuration
-Still in the instance session, you see that IMDS also provides security credential details with no authentication.
+[FINDING 2]: CONFIRMED PRIVILEGE ESCALATION / DATA EXFILTRATION
+The instance role permits unauthenticated horizontal data access across unauthorized S3 buckets outside the web application domain.
 
 
-OP Role
+Phase 4: Instance Metadata Service (IMDS) Audit
+--------------------------------------------------
+From inside the SSM session, the local Instance Metadata Service (IMDS) endpoint was audited:
+
 sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/
-
 WebAppOverPrivRole-304038454789
- 
-sh-5.2$ ROLE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
 
-sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/$ROLE
+sh-5.2$ ROLE=$(curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/)
+sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/\${ROLE}
 
 {
   "Code" : "Success",
-  "LastUpdated" : "2026-03-24T16:19:26Z",
-  "Type" : "AWS-HMAC",
   "AccessKeyId" : "ASIAUNSQ2UYCRJQSSR46",
   "SecretAccessKey" : "m6K316Z2S+N2Jf5fIwpcYFE6ite4zkj7di9XnDly",
-  "Token" : "IQoJb3JpZ2luX2VjENH[...]",
-  "Expiration" : "2026-03-24T22:31:29Z"
+  "Token" : "IQoJb3JpZ2luX2VjENH[...]"
 }
-Moving back to CloudShell, either by exiting the SSM session or opening another CloudShell tab, you can also check the IMDS configuration for the instance.
 
+Auditing the metadata configuration via EC2 API confirmed IMDS enforcement levels:
 
-OP Role
-$ aws ec2 describe-instances \
-    --instance-ids $INSTANCE_ID \
-    --query "Reservations[0].Instances[0].MetadataOptions" \
+$ aws ec2 describe-instances \\
+    --instance-ids \${INSTANCE_ID} \\
+    --query "Reservations[0].Instances[0].MetadataOptions" \\
     --output json
 
 {
     "State": "applied",
     "HttpTokens": "optional",
     "HttpPutResponseHopLimit": 2,
-    "HttpEndpoint": "enabled",
-    "HttpProtocolIpv6": "disabled",
-    "InstanceMetadataTags": "disabled"
+    "HttpEndpoint": "enabled"
 }
-FINDING: The HttpTokens field value is optional. This means IMDSv1 is allowed, which is insecure.
 
-Findings Summary
-Here is what you found so far:
+[FINDING 3]: INSECURE IMDS CONFIGURATION
+"HttpTokens": "optional" indicates IMDSv1 is active. Standard HTTP GET requests require no session token authentication, leaving temporary STS credentials vulnerable to SSRF (Server-Side Request Forgery) attacks.
 
-The instance allows for simple unauthenticated requests to IMDS.
-Through IMDSv1, you can retrieve credentials that can be used to assume the attached role.
-The role has an attached policy that allows broad S3 access.
-So if the web application has any vulnerability that can be exploited, it will result in the exfiltration of sensitive data. That's not good.`,
+
+Summary of Investigation Findings
+--------------------------------------------------
+1. IMDSv1 Enabled: Unauthenticated HTTP GET requests allow local credential harvesting.
+2. Exposure Risk: Any web app vulnerability (e.g., SSRF, Local File Inclusion) grants an attacker local IAM credential access.
+3. Over-Privileged Role: The attached IAM policy grants full s3:* permissions account-wide, enabling immediate multi-bucket data exfiltration. `,
+
     sequence: ["Disable the key", "Review CloudTrail use", "Rotate and validate"]
   },
   {
@@ -240,12 +200,9 @@ So if the web application has any vulnerability that can be exploited, it will r
     estimate: "25 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&q=80",
-    detail: ` Now that you understand the problem, it is time to fix it.
+    detail: ` Following the investigation, identified security misconfigurations will now be remediated. Please note that within the write-ups, at certain times when ACCOUNT_ID is called the $ has been removed for the purpose of this write up as it calls a variable within the code. 
 
-If needed, start a new CloudShell session and reset the variables you will use in this task.
-
-
-OP Role
+Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 $ INSTANCE_ID=$(aws ec2 describe-instances \
@@ -259,22 +216,58 @@ $ echo "ACCOUNT_ID=$ACCOUNT_ID  INSTANCE_ID=$INSTANCE_ID  ROLE_NAME=$ROLE_NAME"
 ACCOUNT_ID=304038454789
 INSTANCE_ID=i-0a91fac348b8b44e1
 ROLE_NAME=WebAppOverPrivRole-304038454789
-Understand the Requirements
+
+Defining the requirements
 The web application for this exercise would require the following permissions:
 
 Read configuration file from the config object in the web app bucket.
 Read static assets from the assets object in the web app bucket.
 Write application logs to the logs object in the web app bucket.
+
 That means the role should be limited to:
 
 s3:GetObject on config and assets.
 s3:PutObject on logs.
 s3:ListBucket solely on the web app bucket.
+
 No need to access any other bucket in the account.
 Create a Scoped Policy
 Save the policy in a local file so you can attach it to the role.
 
 Expand to see the full policy
+cat > ./webapp-scoped-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadConfigAndAssets",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/config/*",
+        "arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/assets/*"
+      ]
+    },
+    {
+      "Sid": "WriteLogs",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": ["arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/logs/*"]
+    },
+    {
+      "Sid": "ListAppBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}"],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["config/*", "assets/*", "logs/*"]
+        }
+      }
+    }
+  ]
+}
+EOF
 
 Create the policy.
 
