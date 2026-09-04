@@ -2,10 +2,10 @@
 import { ArrowUpRight, FolderKanban, GitBranch, ShieldCheck, Users } from 'lucide-react'
 import { useState } from 'react'
 import { DataCard, DetailModal, Metric, PageHeading, SectionLabel, Tag, WorkspaceShell } from '../../components/ui/app-shell'
-import projects from '@/data/projects.json'
+import { playbooks } from '@/data/playbooks'
 
 export default function Projects() {
-    const [selected, setSelected] = useState<(typeof projects)[number] | null>(null);
+    const [selected, setSelected] = useState<(typeof playbooks)[number] | null>(null);
 
     return <WorkspaceShell title="Projects">
         <PageHeading kicker="DELIVERY / 06 ACTIVE PROJECTS" heading="Projects" lede="Track architecture work, security initiatives, and the systems moving from idea to production." action={<button className="new-button">
@@ -26,7 +26,7 @@ export default function Projects() {
             <span className="mono">LAST UPDATED 2H AGO</span>
         </div>
 
-        <div className="project-grid">{projects.map(p => <DataCard key={p.title} className="project-card" onClick={() => setSelected(p)}>
+        <div className="project-grid">{playbooks.map(p => <DataCard key={p.title} className="project-card" onClick={() => setSelected(p)}>
             <div className="project-card-top">
                 <div className="project-icon">
                     <ShieldCheck size={18} />
