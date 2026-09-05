@@ -193,49 +193,28 @@ Summary of Investigation Findings
     sequence: ["Disable the key", "Review CloudTrail use", "Rotate and validate"]
   },
   {
-    title: "II IAM Over-privileged Role",
-    description: "Remediation: New policy creation and detachment of over-privileged policy. Implementation of IMDSv2 with the use of HTTPTokens and HTTPPutResponseHopLimit.",
+    title: "IAM & IMDS Security Remediation: Least Privilege Enforce & IMDSv2 Hardening",
+    description: "Remediating wildcard S3 permissions via custom customer-managed policies and mitigating SSRF credential harvest vectors by mandating IMDSv2.",
     category: "REMEDIATION",
     steps: "11 steps",
     estimate: "25 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&q=80",
-    detail: ` Following the investigation, identified security misconfigurations will now be remediated. Please note that within the write-ups, at certain times when ACCOUNT_ID is called the $ has been removed for the purpose of this write up as it calls a variable within the code. 
+    detail: ` Phase 5: Remediation & Security Hardening
+--------------------------------------------------
+Following the investigation, active remediation steps were executed to apply the principle of least privilege to the IAM role and enforce IMDSv2 at the instance metadata level.
 
-Terminal
-$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+Step 1: Define Least-Privilege Requirements
+The web application workload requires strictly scoped permissions:
+  - Read access to configuration parameters (s3:GetObject on /config/*)
+  - Read access to static application assets (s3:GetObject on /assets/*)
+  - Write access for runtime application logs (s3:PutObject on /logs/*)
+  - List access restricted exclusively to application bucket prefixes (s3:ListBucket)
 
-$ INSTANCE_ID=$(aws ec2 describe-instances \
-      --filters "Name=tag:Name,Values=webapp-server" "Name=instance-state-name,Values=running" \
-      --query "Reservations[0].Instances[0].InstanceId" --output text)
- 
-$ ROLE_NAME="WebAppOverPrivRole-$ACCOUNT_ID"
- 
-$ echo "ACCOUNT_ID=$ACCOUNT_ID  INSTANCE_ID=$INSTANCE_ID  ROLE_NAME=$ROLE_NAME"
+Step 2: Author & Deploy Scoped IAM Policy
+A custom, tightly-scoped IAM policy document (\`webapp-scoped-policy.json\`) was generated locally:
 
-ACCOUNT_ID=304038454789
-INSTANCE_ID=i-0a91fac348b8b44e1
-ROLE_NAME=WebAppOverPrivRole-304038454789
-
-Defining the requirements
-The web application for this exercise would require the following permissions:
-
-Read configuration file from the config object in the web app bucket.
-Read static assets from the assets object in the web app bucket.
-Write application logs to the logs object in the web app bucket.
-
-That means the role should be limited to:
-
-s3:GetObject on config and assets.
-s3:PutObject on logs.
-s3:ListBucket solely on the web app bucket.
-
-No need to access any other bucket in the account.
-Create a Scoped Policy
-Save the policy in a local file so you can attach it to the role.
-
-Expand to see the full policy
-cat > ./webapp-scoped-policy.json << EOF
+$ cat > ./webapp-scoped-policy.json << 'EOF'
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -244,21 +223,21 @@ cat > ./webapp-scoped-policy.json << EOF
       "Effect": "Allow",
       "Action": ["s3:GetObject"],
       "Resource": [
-        "arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/config/*",
-        "arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/assets/*"
+        "arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/config/*",
+        "arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/assets/*"
       ]
     },
     {
       "Sid": "WriteLogs",
       "Effect": "Allow",
       "Action": ["s3:PutObject"],
-      "Resource": ["arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}/logs/*"]
+      "Resource": ["arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/logs/*"]
     },
     {
       "Sid": "ListAppBucket",
       "Effect": "Allow",
       "Action": ["s3:ListBucket"],
-      "Resource": ["arn:aws:s3:::thm-webapp-data-{ACCOUNT_ID}"],
+      "Resource": ["arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}"],
       "Condition": {
         "StringLike": {
           "s3:prefix": ["config/*", "assets/*", "logs/*"]
@@ -269,10 +248,8 @@ cat > ./webapp-scoped-policy.json << EOF
 }
 EOF
 
-Create the policy.
+Deploying the new scoped IAM policy to the account:
 
-
-OP Role
 $ aws iam create-policy \
     --policy-name WebAppScopedS3Policy \
     --policy-document file://webapp-scoped-policy.json
@@ -291,38 +268,33 @@ $ aws iam create-policy \
         "UpdateDate": "2026-03-24T16:43:08+00:00"
     }
 }
-Swap the Role Policy
-Detach the over-privileged policy.
 
+Step 3: Detach Over-Privileged Policy & Swap Managed Policies
+The broad wildcard policy was safely detached from the role, and the newly created least-privilege policy was attached:
 
-OP Role
 $ OLD_POLICY_ARN=$(aws iam list-attached-role-policies \
-    --role-name $ROLE_NAME \
+    --role-name \${ROLE_NAME} \
     --query "AttachedPolicies[?contains(PolicyName,'OverPriv')].PolicyArn" \
     --output text)
 
 $ aws iam detach-role-policy \
-    --role-name $ROLE_NAME \
-    --policy-arn $OLD_POLICY_ARN
-Attach the new policy.
+    --role-name \${ROLE_NAME} \
+    --policy-arn \${OLD_POLICY_ARN}
 
-
-OP Role
-$ NEW_POLICY_ARN="arn:aws:iam::{ACCOUNT_ID}:policy/WebAppScopedS3Policy"
+$ NEW_POLICY_ARN="arn:aws:iam::\${ACCOUNT_ID}:policy/WebAppScopedS3Policy"
 
 $ aws iam attach-role-policy \
-    --role-name $ROLE_NAME \
-    --policy-arn $NEW_POLICY_ARN
-Enforce IMDSv2
-Harden the metadata service.
+    --role-name \${ROLE_NAME} \
+    --policy-arn \${NEW_POLICY_ARN}
+
+[REMEDIATION CHECKPOINT 1]: Wildcard s3:* access severed. Instance role scoped strictly to thm-webapp-data prefixes.
 
 
-Note: This does NOT require stopping or restarting the instance, but any credentials issued via IMDSv1 remain valid for up to 6 hours.
+Step 4: Enforce IMDSv2 (Session Token Requirement)
+To mitigate SSRF exploitation vectors and unauthenticated metadata harvesting, IMDSv2 was mandated on the EC2 instance. The hop limit was restricted to 1 to block container/proxy token forwarding:
 
-
-OP Role
 $ aws ec2 modify-instance-metadata-options \
-    --instance-id $INSTANCE_ID \
+    --instance-id \${INSTANCE_ID} \
     --http-tokens required \
     --http-endpoint enabled \
     --http-put-response-hop-limit 1
@@ -339,46 +311,52 @@ $ aws ec2 modify-instance-metadata-options \
     }
 }
 
-Note: --http-put-response-hop-limit 1 is a best practice to limit network hops to 1, preventing containers or reverse proxies from forwarding metadata tokens to external endpoints.
-
-Verify
-Coming back to the instance SSM session, or starting a new one, you can see that IMDS is not as friendly anymore.
+Note: Enforcing IMDSv2 does not require an instance reboot, though existing session tokens issued prior to enforcement expire via standard TTL.
 
 
-OP Role
-sh-5.2$ ACCOUNT_ID=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
-    -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" | xargs -I{} \
-    curl -s -H "X-aws-ec2-metadata-token: {}" \
-    http://169.254.169.254/latest/dynamic/instance-identity/document | grep -o '"accountId" : "[^"]*"' | cut -d'"' -f4)
+Step 5: Verification & Verification Proof
+Re-testing access from inside the instance SSM session confirms that unauthorized cross-bucket access is blocked while application operations function as expected:
+
+1. Unauthorized Access Attempt (Finance Bucket):
+sh-5.2$ aws s3 ls s3://thm-finance-reports-\${ACCOUNT_ID}/
+An error occurred (AccessDenied) when calling the ListObjectsV2 operation. 
+
+Terminal 
+sh-5.2$ ACCOUNT_ID=$(curl -s -X PUT "http://169.254.169.254/latest/api/token"     -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" | xargs -I{}     curl -s -H "X-aws-ec2-metadata-token: {}"     http://169.254.169.254/latest/dynamic/instance-identity/document | grep -o '"accountId" : "[^"]*"' | cut -d'"' -f4)
 
 sh-5.2$ aws s3 ls s3://thm-finance-reports-$ACCOUNT_ID/
 
 An error occurred (AccessDenied) when calling the ListObjectsV2 operation: [...]
 But the required permissions are applied.
 
+2. Authorized Access Attempt (App Config Prefix):
 
-OP Role
-sh-5.2$ aws s3 ls s3://thm-webapp-data-$ACCOUNT_ID/config/
+Terminal 
+sh-5.2$ aws s3 ls s3://thm-webapp-data-\${ACCOUNT_ID}/config/
 
 2026-03-26 09:06:47         58 app.conf
-2026-03-26 09:06:47         44 db.conf
-Lastly, you can grab the flag for successfully remediating the misconfiguration. Make sure you run this in a separate CloudShell tab, not in the instance session.
+2026-03-26 09:06:47         44 db.conf [PASS: Access Granted]
 
+Executing automated compliance validation via AWS Lambda:
 
-OP Role
 $ aws lambda invoke \
     --function-name AWS203-VerifyRemediation \
     --payload '{}' \
     /tmp/verify-output.json && python3 -m json.tool /tmp/verify-output.json
 
-[...]
 {
     "policy_check": "PASS — over-privileged policy removed",
     "scoped_policy_check": "PASS — WebAppScopedS3Policy attached",
     "imds_check": "PASS — IMDSv2 enforced (HttpTokens=required)",
     "status": "PASS",
     "flag": "[REDACTED]"
-}  `,
+}
+
+Summary of Remediation Findings
+1. Least Privilege Enforcement: All roles must be scoped with Least Privilege and granted minimum permissions necessary for an identity (user, group or service role) to perform its function.
+2. Policy Alignment: Policies must aline with scoped requirements and accurately reflect the functional boundaries of the application.
+3. IMDSv2 Token Requirement: Require Tokens (HttpTokens=required): Forces all requests to the Instance Metadata Service (169.254.169.254) to use a session token obtained via an initial HTTP PUT request with a custom header (X-aws-ec2-metadata-token-ttl-seconds). Simple HTTP GET requests used in standard SSRF attacks fail.
+4. Hop Limit Restriction: Setting the response hop limit to 1 prevents the PUT response packet containing the token from traveling beyond the host OS `,
     sequence: ["Secure the root boundary", "Scope affected principals", "Open the incident timeline"],
   },
   {
