@@ -686,23 +686,392 @@ Summary of Audit Findings & Risk Analysis
     sequence: ["Block public access", "Review policy history", "Notify data owners"]
   },
   {
-    title: "Evidence collection for IR",
+    title: "AWS IAM Security Remediation: Identifying Over-Privileged Users & Excessive Grants",
+    description: "Stripping excessive wildcard IAM administrator policies, authoring a scoped least-privilege policy, enforcing RBAC via IAM Groups, and validating access with the AWS Policy Simulator.",
     category: "FORENSICS",
     steps: "9 steps",
     estimate: "18 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&q=80",
-    detail: "Collect volatile and durable evidence in a repeatable order while maintaining chain of custody for later analysis.",
+    detail: ` Phase 1: Requirements Analysis & Policy Stripping
+--------------------------------------------------
+To remediate the over-privileged developer identity, we first define the minimum necessary operational requirements for carl-the-dev:
+  - Read & List access to S3 objects within the thm-app-data-* bucket
+  - Describe EC2 instances
+  - Read CloudWatch Logs for debugging
+
+Step 1: Detach Over-Privileged Managed Policy
+Sever full administrative access by detaching the customer-managed admin policy directly from the user:
+
+Terminal
+$ aws iam detach-user-policy \
+    --user-name carl-the-dev \
+    --policy-arn arn:aws:iam::\${ACCOUNT_ID}:policy/AWS201-DevCarlAdmin
+
+Step 2: Verify Policy Detachment & Zero-Trust Base
+Verify that no direct policies remain attached to the user. With no policy attached, evaluation hits an implicit deny across all services:
+
+Terminal
+$ aws iam list-attached-user-policies \
+    --user-name carl-the-dev
+
+{
+    "AttachedPolicies": []
+}
+
+Confirmation: There is no policy attached, the evaluation hits an implicit deny.
+
+Phase 2: Scoped Policy Creation & RBAC Enforcement
+--------------------------------------------------
+Direct policy assignment to individual users causes permission drift at scale. Remediation enforces Role-Based Access Control (RBAC) by creating an IAM Group and attaching a scoped policy to the group.
+
+Terminal
+$ aws iam create-policy \
+      --policy-name AppAccess \
+      --policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "S3AppBucketReadOnly",
+               "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "s3:ListBucket"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::thm-app-data-'"$ACCOUNT_ID"'",
+                    "arn:aws:s3:::thm-app-data-'"$ACCOUNT_ID"'/*"
+                ]
+            },
+            {
+                "Sid": "EC2DescribeOnly",
+                "Effect": "Allow",
+                "Action": [
+                    "ec2:DescribeInstances",
+                    "ec2:DescribeSecurityGroups",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeVpcs"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Sid": "CloudWatchLogsReadOnly",
+                "Effect": "Allow",
+                "Action": [
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                    "logs:GetLogEvents",
+                    "logs:FilterLogEvents"
+                ],
+                "Resource": "arn:aws:logs:us-east-1:'"$ACCOUNT_ID"':log-group:/aws/app/*"
+            }
+      ]
+  }'
+
+  {
+    "Policy": {
+        "PolicyName": "AppAccess",
+        "PolicyId": "ANPAU2BXNLZOIR6YSLCSO",
+        "Arn": "arn:aws:iam::227184855672:policy/CarlAppAccess",
+        "Path": "/",
+        "DefaultVersionId": "v1",
+        "AttachmentCount": 0,
+        "PermissionsBoundaryUsageCount": 0,
+        "IsAttachable": true,
+        "CreateDate": "2026-03-17T11:53:53+00:00",
+        "UpdateDate": "2026-03-17T11:53:53+00:00"
+    }
+}
+
+
+Step 1: Create Developers IAM Group establishing group to manger developer permissions collectively:
+
+Terminal
+$ aws iam create-group \
+    --group-name Developers
+
+{
+    "Group": {
+        "Path": "/",
+        "GroupName": "Developers",
+        "GroupId": "AGPATJZKFZJ4MP6ST5AUO",
+        "Arn": "arn:aws:iam::227184855672:group/Developers",
+        "CreateDate": "2026-03-17T10:35:18+00:00"
+    }
+}
+
+Step 2: Attach Scoped Policy to Group
+Attach the scoped AppAccess policy to the developers group:
+
+Terminal
+$ aws iam attach-group-policy \
+  --group-name Developers \
+  --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AppAccess"
+
+
+Add the user carl-the-dev to the group.
+
+Terminal
+$ aws iam add-user-to-group \
+    --group-name Developers \
+    --user-name carl-the-dev
+
+
+Phase 3: Verification & Policy Simulation
+--------------------------------------------------
+Confirm the new group architecture and validate that expected permissions are allowed while enforcing least privilege.
+
+Step 1: Confirm User Group Membership
+Verify carl-the-dev belongs to the Developers group:
+
+
+Terminal
+$ aws iam list-groups-for-user \
+    --user-name carl-the-dev
+
+{
+    "Groups": [
+        {
+            "Path": "/",
+            "GroupName": "Developers",
+            "GroupId": "AGPATJZKFZJ4MP6ST5AUO",
+            "Arn": "arn:aws:iam::227184855672:group/Developers",
+            "CreateDate": "2026-03-17T10:35:18+00:00"
+        }
+    ]
+}
+
+Step 2: Verify Attached Group Policies
+Confirm the group holds the intended scoped policy:
+
+
+Terminal 
+$ aws iam list-attached-group-policies \
+    --group-name Developers
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "AdministratorAccess",
+            "PolicyArn": "arn:aws:iam::227184855672:policy/AppAccess"
+        }
+    ]
+}
+
+Step 3: Validate Permissions via AWS Policy Simulator
+Extract the attached policy document into a local variable and execute an evaluation simulation against target actions and resources:
+
+Step 1: Save the attached policy in a local variable 
+
+
+Terminal 
+$ POLICY_DOC=$(aws iam get-policy-version \
+    --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AppAccess" \
+    --version-id v1 \
+    --query 'PolicyVersion.Document' --output json)
+
+Step 2: Smulate the policy against the required actions.
+
+
+Terminal
+$ aws iam simulate-custom-policy \
+    --policy-input-list "$POLICY_DOC" \
+    --action-names "s3:ListBucket" "s3:GetObject" \
+    --resource-arns "arn:aws:s3:::thm-app-data-\${ACCOUNT_ID}" \
+    --query "EvaluationResults[*].[EvalActionName,EvalDecision]" \
+    --output table
+
+------------------------------
+|    SimulateCustomPolicy    |
++----------------+-----------+
+|  s3:ListBucket |  allowed  |
+|  s3:GetObject  |  allowed  |
++----------------+-----------+  
+
+Evaluation Results
+The above simulation confirms that the statement logic inside of AppAccess Policy grants permission to list the contents of the target application bucket s3:ListBucket | allowed.
+Confirmation that the policy permits reading objects inside the target bucket structure s3:GetObject | allowed.
+
+Summary of Remediation Findings
+--------------------------------------------------
+1. Least-Privilege Realignment: Over-permissive "Action": "*" permissions were revoked and replaced with explicitly allowed actions required for daily developer workflows.
+2. RBAC Management: Transitioned from risky direct-user policy attachments to clean, group-based identity management.
+3. Automated Policy Validation: Used aws iam simulate-custom-policy to programmatically verify policy logic prior to production runtime without risking access disruption.
+`,
     sequence: ["Create an evidence vault", "Export relevant logs", "Record hashes"]
   },
   {
+    title: "AWS IAM Security Secure Build: Over-Privileged Users & Excessive Grants",
+    description: "Designing a secure identity architecture utilizing group-based access control, scoped least-privilege policies, and IAM permission boundaries as preventative guardrails. " ,
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "/networks.jpg",
+    detail: ` Phase 1: Group-Based RBAC & Least-Privilege Policy Deployment
+--------------------------------------------------
+To manage access securely at scale, permissions are defined by functional roles through IAM Groups rather than direct user assignments. Users inherit permissions dynamically upon joining a group.
+
+Step 1: Create Department-Specific IAM Group
+Establish a dedicated group for the Accounting department:
+
+
+Terminal
+$ aws iam create-group --group-name Accounting
+
+{
+    "Group": {
+        "Path": "/",
+        "GroupName": "Accounting",
+        "GroupId": "AGPATJZKFZJ4BMVOS2TPL",
+        "Arn": "arn:aws:iam::227184855672:group/Accounting",
+        "CreateDate": "2026-03-17T10:52:50+00:00"
+    }
+}
+
+
+Step 2: Deploy Scoped Least-Privilege Policy
+Author and create a custom policy granting strictly required S3 read/write access to the application bucket (thm-app-data-*):
+
+
+Terminal
+$ aws iam create-policy \
+  --policy-name AccountingPolicy \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "S3AppAccess",
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::thm-app-data-'"$ACCOUNT_ID"'",
+                "arn:aws:s3:::thm-app-data-'"$ACCOUNT_ID"'/*"
+            ]
+        }
+    ]
+}'
+
+{
+    "Policy": {
+        "PolicyName": "AccountingPolicy",
+        "PolicyId": "ANPAU2BXNLZOOGCCSPW2F",
+        "Arn": "arn:aws:iam::227184855672:policy/AccountingPolicy",
+        "Path": "/",
+        "DefaultVersionId": "v1",
+        "AttachmentCount": 0,
+        "PermissionsBoundaryUsageCount": 0,
+        "IsAttachable": true,
+        "CreateDate": "2026-03-17T12:03:52+00:00",
+        "UpdateDate": "2026-03-17T12:03:52+00:00"
+    }
+}
+
+Step 3: Attach Policy to IAM Group
+Attach the scoped policy to the Accounting group to enforce RBAC:
+
+
+Terminal
+$ aws iam attach-group-policy \
+  --group-name Accounting \
+  --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AccountingPolicy"
+
+  Phase 2: Enforcing Guardrails via Permission Boundaries
+--------------------------------------------------
+A Permission Boundary is an advanced IAM governance mechanism that sets the maximum permissions an identity can ever achieve, acting as an immutable ceiling that supersedes broader permission grants providing an additional safeguard for key users and roles.
+
+Now, every time a new person joins the Accounting department, and a user is created, you can just add the user to the Accounting group. Similarly, if someone needs their access revoked, you can just remove them from the group.
+
+Permission Boundaries Guardrails
+A permission boundary is an IAM policy that sets the maximum permissions an identity can have, superseding other more permissive policies.
+
+
+Step 1: Create Permission Boundary Policy
+Define an explicit boundary document containing explicit Deny statements for sensitive S3 actions:
+
+
+Terminal
+$ aws iam create-policy \
+    --policy-name CarlBoundary \
+    --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Sid": "DenyCarlActions",
+              "Effect": "Deny",
+              "Action": [
+                  "s3:GetObject",
+                  "s3:PutObject",
+                  "s3:ListBucket",
+                  "s3:DeleteBucket",
+                  "s3:ListAllMyBuckets"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }'
+
+{
+    "Policy": {
+        "PolicyName": "CarlBoundary",
+        "PolicyId": "ANPAU2BXNLZONCQSYI2NM",
+        "Arn": "arn:aws:iam::227184855672:policy/CarlBoundary",
+        "Path": "/",
+        "DefaultVersionId": "v1",
+        "AttachmentCount": 0,
+        "PermissionsBoundaryUsageCount": 0,
+        "IsAttachable": true,
+        "CreateDate": "2026-03-17T12:05:46+00:00",
+        "UpdateDate": "2026-03-17T12:05:46+00:00"
+    }
+}
+
+Step 2: Attach Permission Boundary to Identity
+Apply the boundary policy to carl-the-dev to restrict maximum allowable scope:
+
+
+Terminal
+$ aws iam put-user-permissions-boundary \
+    --user-name carl-the-dev \
+    --permissions-boundary "arn:aws:iam::\${ACCOUNT_ID}:policy/CarlBoundary"
+
+
+Phase 3: Verification & Guardrail Inspection
+--------------------------------------------------
+Inspect the target user identity to verify that the permission boundary is actively assigned and enforced by the IAM evaluation engine.
+
+Step 1: Verify Attached Permission Boundary
+Query the user metadata to confirm the active boundary ARN:
+
+
+Terminal
+$ aws iam get-user \
+    --user-name carl-the-dev \
+    --query "User.PermissionsBoundary"
+{
+    "PermissionsBoundaryType": "Policy",
+    "PermissionsBoundaryArn": "arn:aws:iam::227184855672:policy/CarlBoundary"
+}
+
+Summary of Security Principles Implemented
+--------------------------------------------------
+1. Group-Based Permission Model: Onboarding and offboarding workflows are centralized at the group level, eliminating permission sprawl and orphan direct-user policies.
+2. Scoped Least Privilege: Policies explicitly define allowed API actions, targeted bucket resource ARNs, and path prefixes.
+3. Defense-in-Depth Guardrails: Permission Boundaries enforce absolute boundary caps. Even if an attached group policy grants administrator privileges in the future, the boundary ensures high-risk actions remain blocked.
+`,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+    {
     title: "Deploy a detective control",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
     image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: "Introduce a measurable detective control with an owner, alert route, and operating threshold that teams can maintain.",
+    detail: ` `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   }
 ];
