@@ -192,8 +192,8 @@ Summary of Investigation Findings
     sequence: ["Disable the key", "Review CloudTrail use", "Rotate and validate"]
   },
   {
-    title: "AWS IAM & IMDS Security Remediation: Least Privilege Enforce & IMDSv2 Hardening",
-    description: "Remediating wildcard S3 permissions via custom customer-managed policies and mitigating SSRF credential harvest vectors by mandating IMDSv2.",
+    title: "AWS IAM & IMDS Security Remediation: Over-Privileged EC2 Role",
+    description: "Remediating wildcard S3 permissions via custom customer-managed policies and mitigating SSRF credential harvest vectors by least privilege enforce and IMDSv2 Hardening.",
     category: "REMEDIATION",
     steps: "11 steps",
     estimate: "25 min",
@@ -359,7 +359,7 @@ Summary of Remediation Findings
     sequence: ["Secure the root boundary", "Scope affected principals", "Open the incident timeline"],
   },
   {
-    title: "AWS IAM Security Baseline: Building Secure Instance Roles from Scratch",
+    title: "AWS IAM & IMDS Security Secure Build: Over-Privileged EC2 Role",
     description: "Designing and deploying a secure, least-privilege EC2 instance role enforcing trust policies, permissions boundaries, and path-scoped IAM policies.",
     category: "OPERATIONS",
     steps: "6 steps",
@@ -558,13 +558,131 @@ Summary of Secure Build Architecture
     sequence: ["Create the new version", "Deploy and observe", "Revoke the old version"]
   },
   {
-    title: "Contain a public S3 bucket",
+    title: "AWS IAM Investigation: Identifying Over-Privileged Users & Excessive Grants",
+    description: "Auditing IAM identities, evaluating policy documents, identifying over-privileged wildcard access, and enforcing least-privilege principles.",
     category: "SECURITY",
     steps: "7 steps",
     estimate: "14 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80",
-    detail: "Lock down unintended public access, identify the exposure window, and coordinate remediation with the bucket owner.",
+    detail: ` Phase 1: Environment Setup & Identity Discovery
+--------------------------------------------------
+Before auditing policies, retrieve and lock down environment context to streamline AWS CLI commands and establish an accurate inventory of IAM users.
+
+Step 1: Initialize Environment Variables
+Export the active AWS Account ID into a local variable to simplify IAM Amazon Resource Name (ARN) construction across CLI queries:
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ echo $ACCOUNT_ID
+227184855672
+
+Step 2: Enumerate Account Users
+List all IAM user principals created within the target AWS account alongside their creation timestamps:
+
+Terminal
+$ aws iam list-users \
+    --query "Users[*].[UserName,CreateDate]" \
+    --output table
+
+-----------------------------------------------
+|                  ListUsers                  |
++---------------+-----------------------------+
+|  227184855672 |  2026-03-16T15:32:51+00:00  |
+|  carl-the-dev |  2026-03-17T07:03:30+00:00  |
+|  ci-deployer  |  2026-03-17T07:03:30+00:00  |
++---------------+-----------------------------+
+
+
+Phase 2: User Permission Audit & Deep Inspection
+--------------------------------------------------
+Systematically inspect the user carl-the-dev to evaluate attached managed policies, unmanaged inline policies, and group memberships.
+
+Step 1: Inspect Attached Managed Policies
+Query all customer-managed and AWS-managed policies attached directly to carl-the-dev:
+
+
+Terminal
+$ aws iam list-attached-user-policies \
+    --user-name carl-the-dev
+
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "AWS201-DevCarlAdmin",
+            "PolicyArn": "arn:aws:iam::227184855672:policy/AWS201-DevCarlAdmin"
+        }
+    ]
+}
+
+Step 2: Evaluate Managed Policy JSON Document
+Retrieve version v1 of the attached policy to inspect statement permissions:
+
+OP User
+$ aws iam get-policy-version \
+    --policy-arn arn:aws:iam::\${ACCOUNT_ID}:policy/AWS201-DevCarlAdmin \
+    --version-id v1
+
+{
+    "PolicyVersion": {
+        "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": "*",
+                    "Resource": "*",
+                    "Effect": "Allow",
+                    "Sid": "OverPrivilegedAccess"
+                }
+            ]
+        },
+        "VersionId": "v1",
+        "IsDefaultVersion": true,
+        "CreateDate": "2026-03-17T07:04:08+00:00"
+    }
+}
+
+FINDING: "Action": "*" and "Resource": "*" are red flags; the policy grants full unrestricted access to any resource.
+Note: A short reminder that policies are evaluated as follows: Explicit Deny -> Explicit Allow -> Implicit Deny
+
+Step 3: Audit for Hidden Inline Policies
+Inline policies are embedded directly within a single user identity and do not appear in managed policy listings. Check for inline policies on carl-the-dev:
+Info: AWS managed policies are standalone, reusable policies that can be attached to multiple users, groups, or roles. In contrast, inline policies are embedded directly into a single, specific IAM identity, maintaining a strict one-to-one relationship and cannot be shared.
+
+
+Terminal
+$ aws iam list-user-policies \
+    --user-name carl-the-dev
+
+{
+    "PolicyNames": []
+}
+FINDING: In this case, no inline policy.
+
+6. Also, check if the user is part of any groups.
+
+
+OP User
+$ aws iam list-groups-for-user \
+    --user-name carl-the-dev
+
+{
+    "Groups": []
+}
+
+[FINDING]: User is not in any group. Direct policy assignment to users makes permission management at scale unmaintainable and violates RBAC standards.
+
+Summary of Audit Findings & Risk Analysis
+--------------------------------------------------
+1. Over-Privileged Access (Action: *, Resource: *): User carl-the-dev has unrestricted administrative rights. If these credentials are compromised, an attacker gains complete control of the account.
+2. Anti-Pattern Assignment: Policies are attached directly to individual users rather than managed through IAM Groups or Roles, causing permission sprawl.
+3. Potential Impact Scenarios:
+   - Data Destruction: Delete any S3 bucket, RDS database, or EBS snapshot.
+   - Defense Evasion: Terminate or tamper with CloudTrail logging.
+   - Resource Abuse: Launch unauthorized high-cost EC2 instances.
+   - Exfiltration: Read all secrets stored within AWS Secrets Manager and Parameter Store.
+ `,
     sequence: ["Block public access", "Review policy history", "Notify data owners"]
   },
   {
