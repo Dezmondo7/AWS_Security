@@ -9,13 +9,21 @@ export const playbooks = [
     image: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1200&q=80",
     detail: ` Phase 1: Environment & Instance Discovery
 --------------------------------------------------
-To establish baseline context and avoid hardcoding values, initial account and instance parameters were stored in local environment variables.
 
+Step 1: Establish baseline context and avoid hardcoding values.
+Initial account and instance parameters were stored in local environment variables.
+
+
+Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 $ echo "Account_id: \${ACCOUNT_ID}"
 
+
+Step 2: Enumeration of EC2 Instances.
 Next, all running EC2 instances were enumerated to isolate the target workload:
 
+
+Terminal
 $ aws ec2 describe-instances \\
     --filters "Name=instance-state-name,Values=running" \\
     --query "Reservations[*].Instances[*].{ID:InstanceId,Name:Tags[?Key=='Name'],State:State.Name}" \\
@@ -36,10 +44,16 @@ $ aws ec2 describe-instances \\
 +---------+------------------------+
 
 
+
 Phase 2: IAM Instance Profile & Policy Analysis
 --------------------------------------------------
 Once the target instance (\`webapp-server\`) was identified, the associated IAM instance profile and role were extracted for inspection:
 
+
+Step 1: Retrieve and save local environment variables from the target machine.
+
+
+Terminal
 $ INSTANCE_ID=$(aws ec2 describe-instances \\
     --filters "Name=tag:Name,Values=webapp-server" "Name=instance-state-name,Values=running" \\
     --query "Reservations[0].Instances[0].InstanceId" \\
@@ -60,8 +74,12 @@ $ ROLE_NAME=$(aws iam get-instance-profile \\
 $ echo "Role Name: \${ROLE_NAME}"
 Role Name: WebAppOverPrivRole-304038454789
 
+
+Step 2: Enumerate IAM polices including inline policies.
 Attached customer-managed and inline IAM policies were enumerated next:
 
+
+Terminal
 $ aws iam list-attached-role-policies \\
     --role-name \${ROLE_NAME} \\
     --output json
@@ -77,6 +95,8 @@ $ aws iam list-attached-role-policies \\
 
 Inline policies were explicitly checked (as inline policies often obscure standard IAM auditing):
 
+
+Terminal
 $ aws iam list-role-policies \\
     --role-name \${ROLE_NAME} \\
     --output table
@@ -87,6 +107,8 @@ $ aws iam list-role-policies \\
 
 Deep inspection of the default policy version for \`WebAppOverPrivS3Policy\` was performed:
 
+
+Terminal
 $ POLICY_ARN=$(aws iam list-attached-role-policies \\
     --role-name \${ROLE_NAME} \\
     --query "AttachedPolicies[?contains(PolicyName,'OverPriv')].PolicyArn" \\
@@ -125,6 +147,8 @@ Phase 3: Exploitation & BLAST RADIUS PROOF OF CONCEPT
 --------------------------------------------------
 To test the real-world impact of this policy, an AWS Systems Manager (SSM) session was opened directly to the instance:
 
+
+Terminal
 $ aws ssm start-session --target \${INSTANCE_ID}
 Starting session with SessionId: 304038454789-o6qvjy5lct8lrak7hlynnnv2oe
 
@@ -135,6 +159,8 @@ sh-5.2$ aws s3 ls
 
 While the web server should only access \`thm-webapp-data\`, the wild-card permissions permitted full access to restricted organizational assets:
 
+
+Terminal
 sh-5.2$ ACCOUNT_ID=$(curl -s http://169.254.169.254/latest/meta-data/identity-credentials/ec2/info | grep AccountId | cut -d'"' -f4)
 
 sh-5.2$ aws s3 ls s3://thm-finance-reports-\${ACCOUNT_ID}/
@@ -152,6 +178,8 @@ Phase 4: Instance Metadata Service (IMDS) Audit
 --------------------------------------------------
 From inside the SSM session, the local Instance Metadata Service (IMDS) endpoint was audited:
 
+
+Terminal
 sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/
 WebAppOverPrivRole-304038454789
 
@@ -167,6 +195,8 @@ sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials
 
 Auditing the metadata configuration via EC2 API confirmed IMDS enforcement levels:
 
+
+Terminal
 $ aws ec2 describe-instances \\
     --instance-ids \${INSTANCE_ID} \\
     --query "Reservations[0].Instances[0].MetadataOptions" \\
@@ -203,6 +233,7 @@ Summary of Investigation Findings
 --------------------------------------------------
 Following the investigation, active remediation steps were executed to apply the principle of least privilege to the IAM role and enforce IMDSv2 at the instance metadata level.
 
+
 Step 1: Define Least-Privilege Requirements
 The web application workload requires strictly scoped permissions:
   - Read access to configuration parameters (s3:GetObject on /config/*)
@@ -210,9 +241,12 @@ The web application workload requires strictly scoped permissions:
   - Write access for runtime application logs (s3:PutObject on /logs/*)
   - List access restricted exclusively to application bucket prefixes (s3:ListBucket)
 
+
 Step 2: Author & Deploy Scoped IAM Policy
 A custom, tightly-scoped IAM policy document (\`webapp-scoped-policy.json\`) was generated locally:
 
+
+Terminal
 $ cat > ./webapp-scoped-policy.json << 'EOF'
 {
   "Version": "2012-10-17",
@@ -249,6 +283,8 @@ EOF
 
 Deploying the new scoped IAM policy to the account:
 
+
+Terminal
 $ aws iam create-policy \
     --policy-name WebAppScopedS3Policy \
     --policy-document file://webapp-scoped-policy.json
@@ -268,9 +304,12 @@ $ aws iam create-policy \
     }
 }
 
+
 Step 3: Detach Over-Privileged Policy & Swap Managed Policies
 The broad wildcard policy was safely detached from the role, and the newly created least-privilege policy was attached:
 
+
+Terminal
 $ OLD_POLICY_ARN=$(aws iam list-attached-role-policies \
     --role-name \${ROLE_NAME} \
     --query "AttachedPolicies[?contains(PolicyName,'OverPriv')].PolicyArn" \
@@ -292,6 +331,8 @@ $ aws iam attach-role-policy \
 Step 4: Enforce IMDSv2 (Session Token Requirement)
 To mitigate SSRF exploitation vectors and unauthenticated metadata harvesting, IMDSv2 was mandated on the EC2 instance. The hop limit was restricted to 1 to block container/proxy token forwarding:
 
+
+Terminal
 $ aws ec2 modify-instance-metadata-options \
     --instance-id \${INSTANCE_ID} \
     --http-tokens required \
@@ -316,11 +357,25 @@ Note: Enforcing IMDSv2 does not require an instance reboot, though existing sess
 Step 5: Verification & Verification Proof
 Re-testing access from inside the instance SSM session confirms that unauthorized cross-bucket access is blocked while application operations function as expected:
 
-1. Unauthorized Access Attempt (Finance Bucket):
+Step 1: Unauthorized Access Attempt (Finance Bucket):
+[Technical Context & Objective]
+Access is tested against the sensative bucket (thm-finance-reports-\${ACCOUNT_ID}) to prove that the previously detached over-privileged policy no longer grants unrestricted read permissions across the entire AWS account.
+
+[ Initial Access Test]
+
+
+Terminal
 sh-5.2$ aws s3 ls s3://thm-finance-reports-\${ACCOUNT_ID}/
 An error occurred (AccessDenied) when calling the ListObjectsV2 operation. 
 
-Terminal 
+Request fails immediatly with an AccessDenied exeption as the newly newly attached scoped policy omits permissions for the thm-finance-reports-* bucket, enforcing an implicit deny.
+
+
+[ IMDSv2 Token Retrieval & Secondary Test ]
+To ensure environment variables inside the SSM session are correctly populated, we dynamically retrieve the AWS Account ID from the EC2 Instance Metadata Service using an IMDSv2 session token, then re-execute the test:
+
+
+Terminal
 sh-5.2$ ACCOUNT_ID=$(curl -s -X PUT "http://169.254.169.254/latest/api/token"     -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" | xargs -I{}     curl -s -H "X-aws-ec2-metadata-token: {}"     http://169.254.169.254/latest/dynamic/instance-identity/document | grep -o '"accountId" : "[^"]*"' | cut -d'"' -f4)
 
 sh-5.2$ aws s3 ls s3://thm-finance-reports-$ACCOUNT_ID/
@@ -328,7 +383,15 @@ sh-5.2$ aws s3 ls s3://thm-finance-reports-$ACCOUNT_ID/
 An error occurred (AccessDenied) when calling the ListObjectsV2 operation: [...]
 But the required permissions are applied.
 
-2. Authorized Access Attempt (App Config Prefix):
+[Verification Verdict]:
+PASS — Access to unauthorized resources outside the application scope is strictly blocked.
+
+
+Step 2: Authorized Access Attempt (App Config Prefix)
+
+[Technical Context & Objective]:
+Access is tested against the designated application data bucket path (s3://thm-webapp-data-\${ACCOUNT_ID}/config/) to confirm that legitimate operational access is preserved.
+
 
 Terminal 
 sh-5.2$ aws s3 ls s3://thm-webapp-data-\${ACCOUNT_ID}/config/
@@ -336,8 +399,17 @@ sh-5.2$ aws s3 ls s3://thm-webapp-data-\${ACCOUNT_ID}/config/
 2026-03-26 09:06:47         58 app.conf
 2026-03-26 09:06:47         44 db.conf [PASS: Access Granted]
 
+[Explanation of Result]:
+The command successfully returns the contents of the /config/ prefix (app.conf and db.conf). This confirms that the policy explicitly allows s3:ListBucket on the allowed prefix without breaking application functionality.
+
+[Verification Verdict]:
+PASS — Authorized application paths remain fully accessible.
+
+
 Executing automated compliance validation via AWS Lambda:
 
+
+Terminal
 $ aws lambda invoke \
     --function-name AWS203-VerifyRemediation \
     --payload '{}' \
@@ -350,6 +422,7 @@ $ aws lambda invoke \
     "status": "PASS",
     "flag": "[REDACTED]"
 }
+
 
 Summary of Remediation Findings
 1. Least Privilege Enforcement: All roles must be scoped with Least Privilege and granted minimum permissions necessary for an identity (user, group or service role) to perform its function.
@@ -370,14 +443,17 @@ Summary of Remediation Findings
 --------------------------------------------------
 To prevent future security debt, a brand-new, hardened IAM role was deployed from scratch using a least-privilege paradigm, strict trust scoping, and permission boundaries.
 
+
 Step 1: Security Requirement Analysis
 Before provisioning resources, core security controls were defined:
   - Principal Scope: Restrict trust relationship exclusively to ec2.amazonaws.com.
   - Action Scope: Enforce path-level read/write permissions on target S3 prefixes.
   - Guardrails: Attach explicit permissions boundary to restrict maximum administrative scope.
 
+
   Step 2: Environment Initialization & Policy Authoring
 Initializing execution variables and establishing the permissions boundary context:
+
 
 Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -394,6 +470,7 @@ Never add IAM users or other accounts to the trust policy unless cross-account a
 For EC2, the principal is always ec2.amazonaws.com.
 
 Authoring the restrictive trust policy (\`trust-policy.json\`):
+
 
 Terminal
 $ cat > ./trust-policy.json << 'EOF'
@@ -412,6 +489,7 @@ $ cat > ./trust-policy.json << 'EOF'
 EOF
 
 Authoring the scoped application permission policy (\`secure-webapp-policy.json\`):
+
 
 Terminal
 $ cat > ./secure-webapp-policy.json << EOF
@@ -448,8 +526,8 @@ $ cat > ./secure-webapp-policy.json << EOF
 }
 EOF
 
-
 Note: Further hardening can be done by using aws:SourceVpc as a condition; this ensures API calls are denied outside the source VPC, limiting the blast radius. At the same time, you will also need a VPC endpoint.
+
 
 Step 3: Provision IAM Role with Permissions Boundary
 Creating the new IAM role while attaching the preconfigured security boundary:
@@ -472,6 +550,7 @@ $ aws iam create-role \
     }
 }
 
+
 Step 4: Provision & Attach Managed Policies
 Creating the customer-managed S3 policy and attaching necessary operational policies (including SSM Core for instance access):
 
@@ -492,6 +571,7 @@ $ aws iam create-policy \
 }
 
 Attach the policy to the role. You will also attach the SSM policy for managing instance access.
+
 
 Terminal
 $ SECURE_POLICY_ARN="arn:aws:iam::{ACCOUNT_ID}:policy/SecureWebAppS3Policy"
@@ -524,6 +604,7 @@ $ aws iam create-instance-profile \
     }
 }
 
+
 Terminal
 $ aws iam add-role-to-instance-profile \
     --instance-profile-name SecureWebAppProfile \
@@ -532,6 +613,7 @@ $ aws iam add-role-to-instance-profile \
 
 Step 6: Automated Verification & Audit
 Invoking automated verification Lambda to validate trust scope, permissions boundary enforcement, and policy boundaries:
+
 
 Terminal
 $ aws lambda invoke \
@@ -547,6 +629,7 @@ $ aws lambda invoke \
   "status": "PASS",
   "flag": "[REDACTED]"
 }
+
 
 Summary of Secure Build Architecture
 --------------------------------------------------
@@ -569,8 +652,10 @@ Summary of Secure Build Architecture
 --------------------------------------------------
 Before auditing policies, retrieve and lock down environment context to streamline AWS CLI commands and establish an accurate inventory of IAM users.
 
+
 Step 1: Initialize Environment Variables
 Export the active AWS Account ID into a local variable to simplify IAM Amazon Resource Name (ARN) construction across CLI queries:
+
 
 Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -578,8 +663,10 @@ $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 $ echo $ACCOUNT_ID
 227184855672
 
+
 Step 2: Enumerate Account Users
 List all IAM user principals created within the target AWS account alongside their creation timestamps:
+
 
 Terminal
 $ aws iam list-users \
@@ -599,6 +686,7 @@ Phase 2: User Permission Audit & Deep Inspection
 --------------------------------------------------
 Systematically inspect the user carl-the-dev to evaluate attached managed policies, unmanaged inline policies, and group memberships.
 
+
 Step 1: Inspect Attached Managed Policies
 Query all customer-managed and AWS-managed policies attached directly to carl-the-dev:
 
@@ -616,10 +704,11 @@ $ aws iam list-attached-user-policies \
     ]
 }
 
+
 Step 2: Evaluate Managed Policy JSON Document
 Retrieve version v1 of the attached policy to inspect statement permissions:
 
-OP User
+Terminal
 $ aws iam get-policy-version \
     --policy-arn arn:aws:iam::\${ACCOUNT_ID}:policy/AWS201-DevCarlAdmin \
     --version-id v1
@@ -646,6 +735,7 @@ $ aws iam get-policy-version \
 FINDING: "Action": "*" and "Resource": "*" are red flags; the policy grants full unrestricted access to any resource.
 Note: A short reminder that policies are evaluated as follows: Explicit Deny -> Explicit Allow -> Implicit Deny
 
+
 Step 3: Audit for Hidden Inline Policies
 Inline policies are embedded directly within a single user identity and do not appear in managed policy listings. Check for inline policies on carl-the-dev:
 Info: AWS managed policies are standalone, reusable policies that can be attached to multiple users, groups, or roles. In contrast, inline policies are embedded directly into a single, specific IAM identity, maintaining a strict one-to-one relationship and cannot be shared.
@@ -658,12 +748,13 @@ $ aws iam list-user-policies \
 {
     "PolicyNames": []
 }
+
 FINDING: In this case, no inline policy.
 
-6. Also, check if the user is part of any groups.
+Also, check if the user is part of any groups.
 
 
-OP User
+Terminal
 $ aws iam list-groups-for-user \
     --user-name carl-the-dev
 
@@ -672,6 +763,7 @@ $ aws iam list-groups-for-user \
 }
 
 [FINDING]: User is not in any group. Direct policy assignment to users makes permission management at scale unmaintainable and violates RBAC standards.
+
 
 Summary of Audit Findings & Risk Analysis
 --------------------------------------------------
@@ -700,16 +792,20 @@ To remediate the over-privileged developer identity, we first define the minimum
   - Describe EC2 instances
   - Read CloudWatch Logs for debugging
 
+
 Step 1: Detach Over-Privileged Managed Policy
 Sever full administrative access by detaching the customer-managed admin policy directly from the user:
+
 
 Terminal
 $ aws iam detach-user-policy \
     --user-name carl-the-dev \
     --policy-arn arn:aws:iam::\${ACCOUNT_ID}:policy/AWS201-DevCarlAdmin
 
+
 Step 2: Verify Policy Detachment & Zero-Trust Base
 Verify that no direct policies remain attached to the user. With no policy attached, evaluation hits an implicit deny across all services:
+
 
 Terminal
 $ aws iam list-attached-user-policies \
@@ -721,9 +817,11 @@ $ aws iam list-attached-user-policies \
 
 Confirmation: There is no policy attached, the evaluation hits an implicit deny.
 
+
 Phase 2: Scoped Policy Creation & RBAC Enforcement
 --------------------------------------------------
 Direct policy assignment to individual users causes permission drift at scale. Remediation enforces Role-Based Access Control (RBAC) by creating an IAM Group and attaching a scoped policy to the group.
+
 
 Terminal
 $ aws iam create-policy \
@@ -786,6 +884,7 @@ $ aws iam create-policy \
 
 Step 1: Create Developers IAM Group establishing group to manger developer permissions collectively:
 
+
 Terminal
 $ aws iam create-group \
     --group-name Developers
@@ -800,16 +899,18 @@ $ aws iam create-group \
     }
 }
 
+
 Step 2: Attach Scoped Policy to Group
 Attach the scoped AppAccess policy to the developers group:
+
 
 Terminal
 $ aws iam attach-group-policy \
   --group-name Developers \
   --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AppAccess"
 
-
 Add the user carl-the-dev to the group.
+
 
 Terminal
 $ aws iam add-user-to-group \
@@ -820,6 +921,7 @@ $ aws iam add-user-to-group \
 Phase 3: Verification & Policy Simulation
 --------------------------------------------------
 Confirm the new group architecture and validate that expected permissions are allowed while enforcing least privilege.
+
 
 Step 1: Confirm User Group Membership
 Verify carl-the-dev belongs to the Developers group:
@@ -841,6 +943,7 @@ $ aws iam list-groups-for-user \
     ]
 }
 
+
 Step 2: Verify Attached Group Policies
 Confirm the group holds the intended scoped policy:
 
@@ -857,10 +960,9 @@ $ aws iam list-attached-group-policies \
     ]
 }
 
+
 Step 3: Validate Permissions via AWS Policy Simulator
 Extract the attached policy document into a local variable and execute an evaluation simulation against target actions and resources:
-
-Step 1: Save the attached policy in a local variable 
 
 
 Terminal 
@@ -868,6 +970,7 @@ $ POLICY_DOC=$(aws iam get-policy-version \
     --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AppAccess" \
     --version-id v1 \
     --query 'PolicyVersion.Document' --output json)
+
 
 Step 2: Smulate the policy against the required actions.
 
@@ -886,6 +989,7 @@ $ aws iam simulate-custom-policy \
 |  s3:ListBucket |  allowed  |
 |  s3:GetObject  |  allowed  |
 +----------------+-----------+  
+
 
 Evaluation Results
 The above simulation confirms that the statement logic inside of AppAccess Policy grants permission to list the contents of the target application bucket s3:ListBucket | allowed.
@@ -910,6 +1014,7 @@ Summary of Remediation Findings
     detail: ` Phase 1: Group-Based RBAC & Least-Privilege Policy Deployment
 --------------------------------------------------
 To manage access securely at scale, permissions are defined by functional roles through IAM Groups rather than direct user assignments. Users inherit permissions dynamically upon joining a group.
+
 
 Step 1: Create Department-Specific IAM Group
 Establish a dedicated group for the Accounting department:
@@ -970,6 +1075,7 @@ $ aws iam create-policy \
     }
 }
 
+
 Step 3: Attach Policy to IAM Group
 Attach the scoped policy to the Accounting group to enforce RBAC:
 
@@ -978,6 +1084,7 @@ Terminal
 $ aws iam attach-group-policy \
   --group-name Accounting \
   --policy-arn "arn:aws:iam::\${ACCOUNT_ID}:policy/AccountingPolicy"
+
 
   Phase 2: Enforcing Guardrails via Permission Boundaries
 --------------------------------------------------
@@ -1029,6 +1136,7 @@ $ aws iam create-policy \
     }
 }
 
+
 Step 2: Attach Permission Boundary to Identity
 Apply the boundary policy to carl-the-dev to restrict maximum allowable scope:
 
@@ -1043,6 +1151,7 @@ Phase 3: Verification & Guardrail Inspection
 --------------------------------------------------
 Inspect the target user identity to verify that the permission boundary is actively assigned and enforced by the IAM evaluation engine.
 
+
 Step 1: Verify Attached Permission Boundary
 Query the user metadata to confirm the active boundary ARN:
 
@@ -1055,6 +1164,7 @@ $ aws iam get-user \
     "PermissionsBoundaryType": "Policy",
     "PermissionsBoundaryArn": "arn:aws:iam::227184855672:policy/CarlBoundary"
 }
+
 
 Summary of Security Principles Implemented
 --------------------------------------------------
