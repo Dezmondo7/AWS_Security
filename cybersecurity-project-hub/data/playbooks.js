@@ -1,7 +1,6 @@
-
 export const playbooks = [
   {
-    title: "IAM & IMDS Security Investigation: Over-Privileged EC2 Role",
+    title: "AWS IAM & IMDS Security Investigation: Over-Privileged EC2 Role",
     description: "Investigating an over-privileged IAM instance profile and IMDSv1 misconfiguration on a production EC2 workload. ",
     category: "SECURITY",
     steps: "8 steps",
@@ -193,7 +192,7 @@ Summary of Investigation Findings
     sequence: ["Disable the key", "Review CloudTrail use", "Rotate and validate"]
   },
   {
-    title: "IAM & IMDS Security Remediation: Least Privilege Enforce & IMDSv2 Hardening",
+    title: "AWS IAM & IMDS Security Remediation: Least Privilege Enforce & IMDSv2 Hardening",
     description: "Remediating wildcard S3 permissions via custom customer-managed policies and mitigating SSRF credential harvest vectors by mandating IMDSv2.",
     category: "REMEDIATION",
     steps: "11 steps",
@@ -360,41 +359,33 @@ Summary of Remediation Findings
     sequence: ["Secure the root boundary", "Scope affected principals", "Open the incident timeline"],
   },
   {
-    title: "III IAM Over-privileged Role",
-    description: "Secure Build: In order to create a secure IAM resource consideration must be put into AWS service, API requirments, resources and conditions.",
+    title: "AWS IAM Security Baseline: Building Secure Instance Roles from Scratch",
+    description: "Designing and deploying a secure, least-privilege EC2 instance role enforcing trust policies, permissions boundaries, and path-scoped IAM policies.",
     category: "OPERATIONS",
     steps: "6 steps",
     estimate: "9 min",
     state: "In review",
-    image: "https://images.unsplash.com/photo-1518770660439-463ad161cf9?w=1200&q=80",
-    detail: ` So how would you build this securely from the start? Here is how you can do it.
+    image: "/secure_cloud.jpg",
+    detail: ` Phase 6: Secure Architectural Design & Implementation
+--------------------------------------------------
+To prevent future security debt, a brand-new, hardened IAM role was deployed from scratch using a least-privilege paradigm, strict trust scoping, and permission boundaries.
 
-The first step should always be to understand the requirements. Before creating any IAM resource, answer these questions:
+Step 1: Security Requirement Analysis
+Before provisioning resources, core security controls were defined:
+  - Principal Scope: Restrict trust relationship exclusively to ec2.amazonaws.com.
+  - Action Scope: Enforce path-level read/write permissions on target S3 prefixes.
+  - Guardrails: Attach explicit permissions boundary to restrict maximum administrative scope.
 
-What AWS service will assume this role? Common examples are: EC2, Lambda, or ECS.
-What API actions does the end service need? The end service can be anything from a web application to automation or IaC.
-What specific resources does it access? Common examples are: bucket names, table names, or ARNs.
-Are there conditions that should limit access further? These can include: VPC, source IP, tags, or timeframe.
-For this exercise, you will assume the requirements provided earlier, but you will start fresh to implement the required web app role.
+  Step 2: Environment Initialization & Policy Authoring
+Initializing execution variables and establishing the permissions boundary context:
 
-To ensure you have the correct details, reset the required environment variables.
-
-
-Note: A permission boundary is an IAM policy that sets the maximum permissions an identity can have, superseding other more permissive policies. The lab has a preconfigured policy named Room23-DevRoleBoundary that you will use.
-
-
-OP Role
+Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
 $ BOUNDARY_ARN="arn:aws:iam::{ACCOUNT_ID}:policy/Room23-DevRoleBoundary"
 
-$ echo "ACCOUNT_ID=$ACCOUNT_ID"
+$ echo "ACCOUNT_ID=\${ACCOUNT_ID} BOUNDARY_ARN=\${BOUNDARY_ARN}"
+ACCOUNT_ID=304038454789 BOUNDARY_ARN=arn:aws:iam::304038454789:policy/Room23-DevRoleBoundary
 
-ACCOUNT_ID=304038454789
-
-$ echo "BOUNDARY_ARN=$BOUNDARY_ARN"
-
-BOUNDARY_ARN=arn:aws:iam::304038454789:policy/Room23-DevRoleBoundary
 Save the Policies
 The trust policy defines who can assume the role. For an EC2, only the EC2 service should be allowed. Key points to note:
 
@@ -402,10 +393,9 @@ Never use "Principal":"*" because this allows any entity to assume the role.
 Never add IAM users or other accounts to the trust policy unless cross-account access is explicitly required.
 For EC2, the principal is always ec2.amazonaws.com.
 
-Save the trust policy so you can attach it later.
+Authoring the restrictive trust policy (\`trust-policy.json\`):
 
-
-OP Role
+Terminal
 $ cat > ./trust-policy.json << 'EOF'
 {
   "Version": "2012-10-17",
@@ -420,18 +410,52 @@ $ cat > ./trust-policy.json << 'EOF'
   ]
 }
 EOF
-Save the permission policy scoped to the requirements.
 
-Expand to see the full policy
+Authoring the scoped application permission policy (\`secure-webapp-policy.json\`):
+
+Terminal
+$ cat > ./secure-webapp-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadConfigAndAssets",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/config/*",
+        "arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/assets/*"
+      ]
+    },
+    {
+      "Sid": "WriteLogs",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject"],
+      "Resource": ["arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}/logs/*"]
+    },
+    {
+      "Sid": "ListAppBucketPrefixes",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::thm-webapp-data-\${ACCOUNT_ID}"],
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["config/*", "assets/*", "logs/*"]
+        }
+      }
+    }
+  ]
+}
+EOF
 
 
-Note: Further hardening can be done by using aws:SourceVpc as a condition; this ensures API calls are denied outside the source VPC, limiting the blast radius. At the same time, you will also need a VPC endpoint, but this is outside the scope of the exercise.
+Note: Further hardening can be done by using aws:SourceVpc as a condition; this ensures API calls are denied outside the source VPC, limiting the blast radius. At the same time, you will also need a VPC endpoint.
 
-Create the Role
-First, create the role with the permission boundary provided in the lab.
+Step 3: Provision IAM Role with Permissions Boundary
+Creating the new IAM role while attaching the preconfigured security boundary:
 
 
-OP Role
+Terminal
 $ aws iam create-role \
     --role-name SecureWebAppRole \
     --assume-role-policy-document file://trust-policy.json \
@@ -445,11 +469,14 @@ $ aws iam create-role \
         "RoleId": "AROAUNSQ2UYC6BIYQX3KT",
         "Arn": "arn:aws:iam::304038454789:role/SecureWebAppRole",
         "CreateDate": "2026-03-24T16:58:31+00:00",
-[...]
-Then, create the managed policy from the previously saved file. Make sure you save the ARN.
+    }
+}
+
+Step 4: Provision & Attach Managed Policies
+Creating the customer-managed S3 policy and attaching necessary operational policies (including SSM Core for instance access):
 
 
-OP Role
+Terminal
 $ aws iam create-policy \
     --policy-name SecureWebAppS3Policy \
     --policy-document file://secure-webapp-policy.json \
@@ -461,11 +488,12 @@ $ aws iam create-policy \
         "PolicyId": "ANPAUNSQ2UYCWTVL7MEJB",
         "Arn": "arn:aws:iam::304038454789:policy/SecureWebAppS3Policy",
         "Path": "/",
-[...]
+    }
+}
+
 Attach the policy to the role. You will also attach the SSM policy for managing instance access.
 
-
-OP Role
+Terminal
 $ SECURE_POLICY_ARN="arn:aws:iam::{ACCOUNT_ID}:policy/SecureWebAppS3Policy"
 
 $ aws iam attach-role-policy \
@@ -475,11 +503,13 @@ $ aws iam attach-role-policy \
 $ aws iam attach-role-policy \
     --role-name SecureWebAppRole \
     --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-Create the Instance Profile
-You can now create an instance profile and add the role to that profile.
 
 
-OP Role
+Step 5: Provision Instance Profile & Bind Role
+Creating the EC2 Instance Profile wrapper and binding the secure role:
+
+
+Terminal
 $ aws iam create-instance-profile \
     --instance-profile-name SecureWebAppProfile
 
@@ -494,14 +524,16 @@ $ aws iam create-instance-profile \
     }
 }
 
+Terminal
 $ aws iam add-role-to-instance-profile \
     --instance-profile-name SecureWebAppProfile \
     --role-name SecureWebAppRole
-Verify
-You can run the helper Lambda function to see if everything was set up correctly.
 
 
-OP Role
+Step 6: Automated Verification & Audit
+Invoking automated verification Lambda to validate trust scope, permissions boundary enforcement, and policy boundaries:
+
+Terminal
 $ aws lambda invoke \
   --function-name AWS203-VerifySecureBuild \
   --payload '{}' \
@@ -515,7 +547,14 @@ $ aws lambda invoke \
   "status": "PASS",
   "flag": "[REDACTED]"
 }
-Now grab the well-earned flag from the output. `,
+
+Summary of Secure Build Architecture
+--------------------------------------------------
+1. Strict Trust Boundaries: Restricting the assume-role principal exclusively to ec2.amazonaws.com prevents unauthorized cross-account or identity assumption.
+2. Permissions Boundaries: Attaching an explicit permission boundary caps maximum permissions, ensuring even future policy modifications cannot escalate privileges beyond authorized limits.
+3. Least Privilege S3 Access: Wildcard actions and resource statements are replaced with explicit action arrays and exact ARN prefixes.
+4. Defense-in-Depth Hardening: Integrating VPC conditions (e.g., aws:SourceVpc) alongside IMDSv2 ensures credentials cannot be leveraged outside local network boundaries.
+ `,
     sequence: ["Create the new version", "Deploy and observe", "Revoke the old version"]
   },
   {
