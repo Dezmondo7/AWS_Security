@@ -189,7 +189,7 @@ sh-5.2$ curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials
 {
   "Code" : "Success",
   "AccessKeyId" : "ASIAUNSQ2UYCRJQSSR46",
-  "SecretAccessKey" : "m6K316Z2S+N2Jf5fIwpcYFE6ite4zkj7di9XnDly",
+  "SecretAccessKey" : "**************************",
   "Token" : "IQoJb3JpZ2luX2VjENH[...]"
 }
 
@@ -1182,7 +1182,7 @@ Summary of Security Principles Implemented
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    image: "/matrix.jpg",
     detail: ` Phase 1: Environment Initialization & CloudTrail Status
 --------------------------------------------------
 Establishing target context and verifying that audit logging is globally active across us-east-1.
@@ -1302,7 +1302,7 @@ $ aws cloudtrail lookup-events \
 |      Event      |       Resources       |            Time             |           User            |
 +-----------------+-----------------------+-----------------------------+---------------------------+
 [...]
-|  CreateAccessKey|  AKIAXXXXXXXXXXXXXXXX |  2026-03-24T09:42:23+00:00  |  [REDACTED]-123456789012  |
+|  CreateAccessKey|  ******************** |  2026-03-24T09:42:23+00:00  |  [REDACTED]-123456789012  |
 [...]
 +-----------------+-----------------------+-----------------------------+---------------------------+
 [FINDING 3]: Access key generated immediately following policy attachment.
