@@ -641,8 +641,8 @@ Summary of Secure Build Architecture
     sequence: ["Create the new version", "Deploy and observe", "Revoke the old version"]
   },
   {
-    title: "AWS IAM Investigation: Identifying Over-Privileged Users & Excessive Grants",
-    description: "Auditing IAM identities, evaluating policy documents, identifying over-privileged wildcard access, and enforcing least-privilege principles.",
+    title: "AWS IAM Investigation: Over-Privileged User",
+    description: "Forensic investigation into user policies to indentify over permissive boundaries.",
     category: "SECURITY",
     steps: "7 steps",
     estimate: "14 min",
@@ -778,7 +778,7 @@ Summary of Audit Findings & Risk Analysis
     sequence: ["Block public access", "Review policy history", "Notify data owners"]
   },
   {
-    title: "AWS IAM Security Remediation: Identifying Over-Privileged Users & Excessive Grants",
+    title: "AWS IAM Security Remediation: Over-Privileged User",
     description: "Stripping excessive wildcard IAM administrator policies, authoring a scoped least-privilege policy, enforcing RBAC via IAM Groups, and validating access with the AWS Policy Simulator.",
     category: "FORENSICS",
     steps: "9 steps",
@@ -1004,7 +1004,7 @@ Summary of Remediation Findings
     sequence: ["Create an evidence vault", "Export relevant logs", "Record hashes"]
   },
   {
-    title: "AWS IAM Security Secure Build: Over-Privileged Users & Excessive Grants",
+    title: "AWS IAM Security Secure Build: Over-Privileged User",
     description: "Designing a secure identity architecture utilizing group-based access control, scoped least-privilege policies, and IAM permission boundaries as preventative guardrails. " ,
     category: "GOVERNANCE",
     steps: "5 steps",
@@ -1174,7 +1174,264 @@ Summary of Security Principles Implemented
 `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
+  
     {
+    title: "AWS IAM Security Identification: Silence of the IAM",
+    description: "Forensic investigation of an AWS environment with active CloudTrail logging but zero alerting or detection mechanisms for high-risk IAM operations.",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` Phase 1: Environment Initialization & CloudTrail Status
+--------------------------------------------------
+Establishing target context and verifying that audit logging is globally active across us-east-1.
+
+
+Step 1: Save Target AWS Account ID
+Store the active account identity in an environment variable to prevent hardcoding:
+
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ echo $ACCOUNT_ID
+569945792897
+
+Step 2: Enumerate CloudTrail Trails
+Identify active audit trails capturing global service events (IAM operations are globally audited in us-east-1 regardless of source region):
+
+
+Terminal
+$ aws cloudtrail describe-trails \
+    --query "trailList[*].{Name:Name,IsMultiRegion:IsMultiRegionTrail,HomeRegion:HomeRegion,GlobalEvents:IncludeGlobalServiceEvents}" \
+    --output table
+
+--------------------------------------------------------------------
+|                          DescribeTrails                          |
++--------------+-------------+-----------------+-------------------+
+| GlobalEvents | HomeRegion  |  IsMultiRegion  |       Name        |
++--------------+-------------+-----------------+-------------------+
+|  True        |  us-east-1  |  False          |  lab-audit-trail  |
+|  True        |  us-east-1  |  True           |  thm-org-trail    |
++--------------+-------------+-----------------+-------------------+
+
+
+Step 3: Confirm Active Logging Status
+Verify logging health for lab-audit-trail to ensure event telemetry delivery:
+
+
+Terminal
+$ TRAIL_NAME=$(aws cloudtrail describe-trails \
+    --query "trailList[0].Name" --output text)
+
+$ aws cloudtrail get-trail-status --name $TRAIL_NAME
+
+{
+    "IsLogging": true,
+    "LatestDeliveryTime": "2026-03-30T08:40:33.806000+00:00",
+    "StartLoggingTime": "2026-03-24T09:41:38.402000+00:00",
+    "LatestCloudWatchLogsDeliveryTime": "2026-03-30T09:28:07.702000+00:00",
+    "LatestDigestDeliveryTime": "2026-03-30T08:51:05.164000+00:00",
+    "LatestDeliveryAttemptTime": "2026-03-30T08:40:33Z",
+    "LatestNotificationAttemptTime": "",
+    "LatestNotificationAttemptSucceeded": "",
+    "LatestDeliveryAttemptSucceeded": "2026-03-30T08:40:33Z",
+    "TimeLoggingStarted": "2026-03-24T09:41:38Z",
+    "TimeLoggingStopped": ""
+}
+
+[FINDING 1]: Audit trail status confirmed active ("IsLogging": true). Logging is verified, but alert triggers are missing.
+
+
+Phase 2: High-Risk Event Telemetry & Threat Hunting
+--------------------------------------------------
+Searching for high-risk write/mutation events across IAM telemetry.
+
+
+Key Risky Operations Reference:
+----------------------------------------------------------------------------------
+| Event Name             | Risk     | Impact Scenario                            |
++------------------------+----------+--------------------------------------------+
+| AttachUserPolicy       | Critical | Direct managed admin escalation           |
+| AttachRolePolicy       | Critical | High-privilege role assignment             |
+| PutUserPolicy          | Critical | Stealth inline policy creation             |
+| CreateUser             | High     | Persistence via new identity creation       |
+| CreateAccessKey        | High     | Unmonitored API programmatic persistence    |
+| CreateLoginProfile     | High     | Console backdooring for programmatic user  |
+| UpdateAssumeRolePolicy | High     | Cross-account role trust exploitation      |
+| DeleteTrail/StopLogging| Critical | Defense evasion & trail suppression        |
+| DeactivateMFADevice    | High     | Security boundary degradation              |
+----------------------------------------------------------------------------------
+
+Step 1: Search for AttachUserPolicy Events
+Query CloudTrail lookup-events for recent user policy attachments:
+
+
+Terminal
+$ aws cloudtrail lookup-events \
+    --lookup-attributes AttributeKey=EventName,AttributeValue=AttachUserPolicy \
+    --max-results 10 \
+    --query "Events[*].{Time:EventTime,User:Username,Event:EventName,Resources:Resources[0].ResourceName}" \
+    --output table
+
+---------------------------------------------------------------------------------------------
+|                                            LookupEvents                                   |
++------------------+---------------+-----------------------------+--------------------------+
+|       Event      |   Resources   |            Time             |               User       |
++------------------+---------------+-----------------------------+--------------------------+
+|  AttachUserPolicy|  app-deployer |  2026-03-24T09:42:18+00:00  |  Room24-AdminAttach-[...]|
++------------------+---------------+-----------------------------+--------------------------+
+[FINDING 2]: Policy attached to user app-deployer by identity Room24-AdminAttach-[...].
+
+
+Step 2: Search for CreateAccessKey Events
+Inspect credential creation events to identify programmatic persistence:
+
+
+Terminal
+$ aws cloudtrail lookup-events \
+    --lookup-attributes AttributeKey=EventName,AttributeValue=CreateAccessKey \
+    --max-results 10 \
+    --query "Events[*].{Time:EventTime,User:Username,Event:EventName,Resources:Resources[0].ResourceName}" \
+    --output table
+
+----------------------------------------------------------------------------------------------------
+|                                                 LookupEvents                                      |
++-----------------+-----------------------+-----------------------------+---------------------------+
+|      Event      |       Resources       |            Time             |           User            |
++-----------------+-----------------------+-----------------------------+---------------------------+
+[...]
+|  CreateAccessKey|  AKIAXXXXXXXXXXXXXXXX |  2026-03-24T09:42:23+00:00  |  [REDACTED]-123456789012  |
+[...]
++-----------------+-----------------------+-----------------------------+---------------------------+
+[FINDING 3]: Access key generated immediately following policy attachment.
+
+
+Step 3: Aggregated IAM Write Event Search
+Perform a broad event-source query filtering across mutation verbs (Attach, Create, Put, Update, Delete):
+
+
+Terminal
+$ aws cloudtrail lookup-events \
+    --lookup-attributes AttributeKey=EventSource,AttributeValue=iam.amazonaws.com \
+    --max-results 50 \
+    --query "Events[?contains(EventName,'Attach') || contains(EventName,'Create') || contains(EventName,'Put') || contains(EventName,'Update') || contains(EventName,'Delete')].{Time:EventTime,User:Username,Event:EventName}" \
+    --output table
+
+--------------------------------------------------------------------------------------------------
+|                                            LookupEvents                                        |
++----------------------------+-----------------------------+-------------------------------------+
+|            Event           |            Time             |                  User               |
++----------------------------+-----------------------------+-------------------------------------+
+[...]
+|  CreateAccessKey           |  2026-03-24T09:42:23+00:00  |  [[REDACTED]-123456789012           |
+|  AttachUserPolicy          |  2026-03-24T09:42:18+00:00  |  Room24-AdminAttach-123456789012    |
+[...]
++----------------------------+-----------------------------+-------------------------------------+
+[FINDING 4]: Several suspicious changes should be further investigated.
+
+Inspect Suspicious Changes
+In the logs, you should be able to see at least two suspicious events:
+
+AttachUserPolicy event - The AdministratorAccess managed policy was attached directly to a low-privilege user.
+CreateAccessKey event - A new key was created for the low-privilege user.
+The console details for the AttachUserPolicy event.
+
+
+Phase 3: Deep Inspection of Suspicious Events
+--------------------------------------------------
+Extracting raw JSON event metadata from CloudTrail logs to confirm intent, source IPs, and target parameters.
+
+
+Step 1: Extract AttachUserPolicy Payload
+Dump raw log JSON for event verification:
+
+
+Terminal
+$ aws cloudtrail lookup-events \
+    --lookup-attributes AttributeKey=EventName,AttributeValue=AttachUserPolicy \
+    --max-results 5 \
+    --query "Events[0].CloudTrailEvent" \
+    --output text | python3 -m json.tool
+
+{
+    "eventVersion": "1.11",
+    "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROA00000000000000000:Room24-AdminAttach-123456789012"
+    },
+    "eventTime": "2026-03-24T09:42:18Z",
+    "eventSource": "iam.amazonaws.com",
+    "eventName": "AttachUserPolicy",
+    "awsRegion": "us-east-1",
+    "requestParameters": {
+        "userName": "app-deployer",
+        "policyArn": "arn:aws:iam::aws:policy/AdministratorAccess"
+    }
+}
+
+Key Indicators Identified:
+- userIdentity - who performed the action.
+- requestParameters - which policy ARN was attached to which user.
+- sourceIPAddress - where the request originated from.
+- eventTime - when it happened.
+- Confirm the Current State
+- List the attached policies.
+
+
+Phase 4: Current Identity State Verification
+--------------------------------------------------
+Cross-referencing live IAM state against CloudTrail logs to confirm persistent access.
+
+
+Step 1: Verify Attached User Policies
+Query current live policy attachments on app-deployer:
+
+
+Terminal
+$ aws iam list-attached-user-policies --user-name app-deployer \
+    --query "AttachedPolicies[*].{Policy:PolicyName,ARN:PolicyArn}" --output table
+
+------------------------------------------------------------------------
+|                       ListAttachedUserPolicies                       |
++----------------------------------------------+-----------------------+
+|                      ARN                     |        Policy         |
++----------------------------------------------+-----------------------+
+|  arn:aws:iam::aws:policy/AdministratorAccess |  AdministratorAccess  |
++----------------------------------------------+-----------------------+
+
+CRITICAL FINDING]: User app-deployer maintains unmonitored full AdministratorAccess.
+
+
+Step 2: Verify Active Programmatic Keys
+Enumerate active credentials bound to app-deployer:
+
+
+Terminal
+$ aws iam list-access-keys --user-name app-deployer \
+    --query "AccessKeyMetadata[*].{KeyId:AccessKeyId,Status:Status,Created:CreateDate}" --output table
+
+-----------------------------------------------------------------
+|                        ListAccessKeys                         |
++----------------------------+------------------------+---------+
+|           Created          |         KeyId          | Status  |
++----------------------------+------------------------+---------+
+|  2026-03-24T09:42:23+00:00 |  AKIA0000000000000000  |  Active |
++----------------------------+------------------------+---------+
+
+[CRITICAL FINDING]: Active backdoored access key AKIA0000000000000000 confirmed live.
+
+
+Summary of Investigation Findings
+--------------------------------------------------
+1. Unauthorized Privilege Escalation: Managed policy AdministratorAccess was assigned directly to low-privilege user app-deployer.
+2. Persistence Mechanism: New access key AKIA0000000000000000 created immediately following escalation to establish backdoor programmatic access.
+3. Detection Blindspot: While CloudTrail recorded events successfully, the lack of real-time detection/alerting rules permitted stealth exploitation.
+ `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
     title: "Deploy a detective control",
     category: "GOVERNANCE",
     steps: "5 steps",
@@ -1183,5 +1440,75 @@ Summary of Security Principles Implemented
     image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
     detail: ` `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
-  }
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
+  {
+    title: "Deploy a detective control",
+    category: "GOVERNANCE",
+    steps: "5 steps",
+    estimate: "11 min",
+    state: "Draft",
+    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
+    detail: ` `,
+    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
+  },
 ];
