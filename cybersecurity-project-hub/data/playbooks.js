@@ -45,7 +45,7 @@ $ aws ec2 describe-instances \\
 
 
 
-Phase 2: IAM Instance Profile & Policy Analysis
+ Phase 2: IAM Instance Profile & Policy Analysis
 --------------------------------------------------
 Once the target instance (\`webapp-server\`) was identified, the associated IAM instance profile and role were extracted for inspection:
 
@@ -143,7 +143,7 @@ $ aws iam get-policy-version \\
 The attached IAM policy explicitly grants "s3:*" across "Resource": "*". This allows the web app role to perform any action on any S3 bucket in the account.
 
 
-Phase 3: Exploitation & BLAST RADIUS PROOF OF CONCEPT
+ Phase 3: Exploitation & BLAST RADIUS PROOF OF CONCEPT
 --------------------------------------------------
 To test the real-world impact of this policy, an AWS Systems Manager (SSM) session was opened directly to the instance:
 
@@ -174,7 +174,7 @@ sh-5.2$ aws s3 cp s3://thm-finance-reports-\${ACCOUNT_ID}/flag/overpowered-role.
 The instance role permits unauthenticated horizontal data access across unauthorized S3 buckets outside the web application domain.
 
 
-Phase 4: Instance Metadata Service (IMDS) Audit
+ Phase 4: Instance Metadata Service (IMDS) Audit
 --------------------------------------------------
 From inside the SSM session, the local Instance Metadata Service (IMDS) endpoint was audited:
 
@@ -229,7 +229,7 @@ Summary of Investigation Findings
     estimate: "25 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=1200&q=80",
-    detail: ` Phase 5: Remediation & Security Hardening
+    detail: ` Phase 1: Remediation & Security Hardening
 --------------------------------------------------
 Following the investigation, active remediation steps were executed to apply the principle of least privilege to the IAM role and enforce IMDSv2 at the instance metadata level.
 
@@ -357,7 +357,7 @@ Note: Enforcing IMDSv2 does not require an instance reboot, though existing sess
 Step 5: Verification & Verification Proof
 Re-testing access from inside the instance SSM session confirms that unauthorized cross-bucket access is blocked while application operations function as expected:
 
-Step 1: Unauthorized Access Attempt (Finance Bucket):
+1: Unauthorized Access Attempt (Finance Bucket):
 [Technical Context & Objective]
 Access is tested against the sensative bucket (thm-finance-reports-\${ACCOUNT_ID}) to prove that the previously detached over-privileged policy no longer grants unrestricted read permissions across the entire AWS account.
 
@@ -387,7 +387,7 @@ But the required permissions are applied.
 PASS — Access to unauthorized resources outside the application scope is strictly blocked.
 
 
-Step 2: Authorized Access Attempt (App Config Prefix)
+2: Authorized Access Attempt (App Config Prefix)
 
 [Technical Context & Objective]:
 Access is tested against the designated application data bucket path (s3://thm-webapp-data-\${ACCOUNT_ID}/config/) to confirm that legitimate operational access is preserved.
@@ -439,7 +439,7 @@ Summary of Remediation Findings
     estimate: "9 min",
     state: "In review",
     image: "/secure_cloud.jpg",
-    detail: ` Phase 6: Secure Architectural Design & Implementation
+    detail: ` Phase 1: Secure Architectural Design & Implementation
 --------------------------------------------------
 To prevent future security debt, a brand-new, hardened IAM role was deployed from scratch using a least-privilege paradigm, strict trust scoping, and permission boundaries.
 
@@ -451,7 +451,7 @@ Before provisioning resources, core security controls were defined:
   - Guardrails: Attach explicit permissions boundary to restrict maximum administrative scope.
 
 
-  Step 2: Environment Initialization & Policy Authoring
+Step 2: Environment Initialization & Policy Authoring
 Initializing execution variables and establishing the permissions boundary context:
 
 
@@ -680,7 +680,7 @@ $ aws iam list-users \
 +---------------+-----------------------------+
 
 
-Phase 2: User Permission Audit & Deep Inspection
+  Phase 2: User Permission Audit & Deep Inspection
 --------------------------------------------------
 Systematically inspect the user carl-the-dev to evaluate attached managed policies, unmanaged inline policies, and group memberships.
 
@@ -816,7 +816,7 @@ $ aws iam list-attached-user-policies \
 Confirmation: There is no policy attached, the evaluation hits an implicit deny.
 
 
-Phase 2: Scoped Policy Creation & RBAC Enforcement
+ Phase 2: Scoped Policy Creation & RBAC Enforcement
 --------------------------------------------------
 Direct policy assignment to individual users causes permission drift at scale. Remediation enforces Role-Based Access Control (RBAC) by creating an IAM Group and attaching a scoped policy to the group.
 
@@ -916,7 +916,7 @@ $ aws iam add-user-to-group \
     --user-name carl-the-dev
 
 
-Phase 3: Verification & Policy Simulation
+ Phase 3: Verification & Policy Simulation
 --------------------------------------------------
 Confirm the new group architecture and validate that expected permissions are allowed while enforcing least privilege.
 
@@ -970,7 +970,7 @@ $ POLICY_DOC=$(aws iam get-policy-version \
     --query 'PolicyVersion.Document' --output json)
 
 
-Step 2: Smulate the policy against the required actions.
+Step 4: Smulate the policy against the required actions.
 
 
 Terminal
@@ -1145,7 +1145,7 @@ $ aws iam put-user-permissions-boundary \
     --permissions-boundary "arn:aws:iam::\${ACCOUNT_ID}:policy/CarlBoundary"
 
 
-Phase 3: Verification & Guardrail Inspection
+ Phase 3: Verification & Guardrail Inspection
 --------------------------------------------------
 Inspect the target user identity to verify that the permission boundary is actively assigned and enforced by the IAM evaluation engine.
 
@@ -1242,7 +1242,7 @@ $ aws cloudtrail get-trail-status --name $TRAIL_NAME
 [FINDING 1]: Audit trail status confirmed active ("IsLogging": true). Logging is verified, but alert triggers are missing.
 
 
-Phase 2: High-Risk Event Telemetry & Threat Hunting
+ Phase 2: High-Risk Event Telemetry & Threat Hunting
 --------------------------------------------------
 Searching for high-risk write/mutation events across IAM telemetry.
 
@@ -1337,7 +1337,7 @@ CreateAccessKey event - A new key was created for the low-privilege user.
 The console details for the AttachUserPolicy event.
 
 
-Phase 3: Deep Inspection of Suspicious Events
+ Phase 3: Deep Inspection of Suspicious Events
 --------------------------------------------------
 Extracting raw JSON event metadata from CloudTrail logs to confirm intent, source IPs, and target parameters.
 
@@ -1378,7 +1378,7 @@ Key Indicators Identified:
 - List the attached policies.
 
 
-Phase 4: Current Identity State Verification
+ Phase 4: Current Identity State Verification
 --------------------------------------------------
 Cross-referencing live IAM state against CloudTrail logs to confirm persistent access.
 
@@ -1455,7 +1455,7 @@ $ ROGUE_KEY_ID=$(aws iam list-access-keys --user-name app-deployer \
 $ echo "ACCOUNT_ID=$ACCOUNT_ID  ROGUE_KEY_ID=$ROGUE_KEY_ID"
 
 
-Phase 2: Access Revocation & Backdoor Cleanup
+ Phase 2: Access Revocation & Backdoor Cleanup
 --------------------------------------------------
 Detaching AdministratorAccess policy and revoking active backdoored access keys
 
@@ -1507,7 +1507,7 @@ $ aws iam list-access-keys --user-name app-deployer --output table
 +--------------+
 
 
-Phase 3: Automated Real-Time Threat Detection Deployment
+ Phase 3: Automated Real-Time Threat Detection Deployment
 --------------------------------------------------
 Constructing an Amazon EventBridge rule and SNS notification topic to alert on high-risk IAM mutation events.
 
@@ -1637,7 +1637,7 @@ $ aws sns set-topic-attributes \
   --attribute-value file:///tmp/iam-topic-policy.json
 
 
-Phase 4: Detection Pipeline Verification
+ Phase 4: Detection Pipeline Verification
 --------------------------------------------------
 Triggering a controlled event to validate real-time alert dispatching.
 
@@ -1710,7 +1710,7 @@ $ SNS_ARN="arn:aws:sns:us-east-1:\${ACCOUNT_ID}:iam-change-alerts"
 $ echo "ACCOUNT_ID=$ACCOUNT_ID  SNS_ARN=$SNS_ARN"
 
 
-Phase 2: Tiered EventBridge Rule Deployment
+ Phase 2: Tiered EventBridge Rule Deployment
 --------------------------------------------------
 Constructing severity-based event patterns to route critical IAM mutations and CloudTrail defense evasion attempts.
 It is a good practice to organize the events you want to monitor by severity:
@@ -1837,7 +1837,7 @@ $ aws events put-targets \
     "FailedEntries": []
 }
 
-Phase 3: Anomaly Burst Monitoring via CloudWatch
+ Phase 3: Anomaly Burst Monitoring via CloudWatch
 --------------------------------------------------
 Establishing log metric filters and threshold alarms to detect high-frequency IAM mutation bursts.
 Amazon CloudWatch is a monitoring and observability service that collects, monitors, and analyzes logs, metrics, and events.
@@ -1982,7 +1982,7 @@ Summary of Findings & Implementation
     estimate: "11 min",
     state: "Draft",
     image: "/cable.jpg",
-    detail: `Phase 1: Environment Initialization & Context Capture
+    detail: ` Phase 1: Environment Initialization & Context Capture
 --------------------------------------------------
 Retrieving required target EC2 instance and account identifiers before starting security analysis.
 
@@ -2002,7 +2002,7 @@ $ INSTANCE_ID=$(aws ec2 describe-instances \
 $ echo "Account ID: $ACCOUNT_ID | Instance ID: $INSTANCE_ID"
 
 
-Phase 2: Security Group Inbound Rule Inspection
+ Phase 2: Security Group Inbound Rule Inspection
 --------------------------------------------------
 Auditing the attached network security group to identify public inbound exposure vectors.
 
@@ -2042,7 +2042,7 @@ $ aws ec2 describe-security-groups \
 [FINDING 1]: The security group attached to the instance allows SSH (Port 22) connections from anywhere (CIDR 0.0.0.0/0).
 
 
-Phase 3: Control Plane Alternative Access Verification
+ Phase 3: Control Plane Alternative Access Verification
 --------------------------------------------------
 Evaluating whether AWS Systems Manager Session Manager agent is active to replace exposed inbound management ports.
 
@@ -2094,7 +2094,7 @@ Summary of Findings & Risk Assessment
     estimate: "11 min",
     state: "Draft",
     image: "/motherboard.jpg",
-    detail: `Phase 1: Target Identification & Context Capture
+    detail: ` Phase 1: Target Identification & Context Capture
 --------------------------------------------------
 Retrieving target EC2 instance and security group identifiers to target the remediation scope.
 
@@ -2117,9 +2117,12 @@ $ SG_ID=$(aws ec2 describe-instances \
 $ echo "Target Instance: $INSTANCE_ID | Target SG: $SG_ID"
  
  
-Phase 2: Inbound Attack Surface Revocation
+ Phase 2: Inbound Attack Surface Revocation
 --------------------------------------------------
 Revoking the over-permissive inbound TCP/22 ingress rule from the active security group.
+
+
+Step 1: Revoke the in-bound rule
 
 
 Terminal 
@@ -2158,7 +2161,7 @@ $ aws ec2 describe-security-groups \
 An empty output means there are no (more) rules.
 
 
-Phase 3: Secure Management Path & Remediation Verification
+ Phase 3: Secure Management Path & Remediation Verification
 --------------------------------------------------
 Validating interactive management connectivity via AWS Systems Manager Session Manager and running automated compliance checks.
 
@@ -2212,7 +2215,7 @@ Summary of Actions & Security Outcome
     estimate: "11 min",
     state: "Draft",
     image: "/computer_chip.jpg",
-    detail: `Phase 1: Environment Context & Network Target Identification
+    detail: ` Phase 1: Environment Context & Network Target Identification
 --------------------------------------------------
 Retrieving required Subnet ID and VPC ID parameters from the target environment baseline.
 
@@ -2247,7 +2250,7 @@ $ VPC_ID=$(aws ec2 describe-instances \
 $ echo "Subnet ID: $SUBNET_ID | VPC ID: $VPC_ID"
 
 
-Phase 2: Zero-Ingress Security Group Provisioning
+ Phase 2: Zero-Ingress Security Group Provisioning
 --------------------------------------------------
 Provisioning a strict network firewall policy containing zero inbound rules for management or remote shell access.
 
@@ -2266,7 +2269,7 @@ $ SECURE_SG=$(aws ec2 create-security-group \
 $ echo $SECURE_SG
 
 
-Phase 3: Keyless, Private Managed EC2 Instance Launch
+ Phase 3: Keyless, Private Managed EC2 Instance Launch
 --------------------------------------------------
 Launching an EC2 instance without an SSH key pair, without a public IP address, and bound to SSM IAM instance authorization.
 
@@ -2318,7 +2321,7 @@ $ aws ec2 run-instances \
 [SECURITY CONTROL]: The --key-name parameter is intentionally left out. This instance has no SSH key pair associated with it, so it cannot be accessed via SSH from the start.
 
 
-Phase 4: Architecture Baseline Verification
+ Phase 4: Architecture Baseline Verification
 --------------------------------------------------
 Validating compliance of the newly provisioned secure instance via automated verification scripts.
 
@@ -2350,23 +2353,256 @@ Summary of Security Principles & Core Takeaways
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
+    title: "AWS EC2 Security Identification: Unpatched Instance",
+    description: "Quantifying patch debt and auditing managed node health using AWS Systems Manager Patch Manager baselines and CLI queries.",
+    category: "INVESTIGATION",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "/desktop.jpg",
+    detail: ` Phase 1: Environment Initialization & Target Discovery
+--------------------------------------------------
+
+Step 1: Save Environment Context
+
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ INSTANCE_ID=$(aws ec2 describe-instances \
+    --filters "Name=tag:Purpose,Values=room-42-lab" "Name=instance-state-name,Values=running" \
+    --query "Reservations[0].Instances[0].InstanceId" \
+    --output text)
+
+$ echo "Account ID: $ACCOUNT_ID | Instance ID: $INSTANCE_ID"
+
+
+ Phase 2: SSM Managed Node Verification
+--------------------------------------------------
+
+Step 1 : Verify SSM Managed Instance Status
+Before Patch Manager can target an instance, it must be registered as a managed node and have the SSM agent online.
+The following command checks whether the instance is managed by Systems Manager.
+
+
+Terminal
+$ aws ssm describe-instance-information \
+  --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+  --query "InstanceInformationList[0].{Ping:PingStatus,Platform:PlatformName,Agent:AgentVersion}" \
+  --output table
+
+------------------------------------------
+|       DescribeInstanceInformation      |
++-------------+---------+----------------+
+|    Agent    |  Ping   |   Platform     |
++-------------+---------+----------------+
+|  3.3.4108.0 |  Online |  Amazon Linux  |
++-------------+---------+----------------+
+
+[FINDING]: The instance is registered with Systems Manager, and its agent is currently online.
+
+
+ Phase 3: Vulnerability & Patch Assessment Scan
+--------------------------------------------------
+
+
+Step 1: Dispatch AWS-RunPatchBaseline Scan Document
+Before the patch state can be queried, Patch Manager must run a scan against the instance to build its record. Run the following command to initiate the scan.
+
+
+Terminal
+$ SCAN_COMMAND_ID=$(aws ssm send-command \
+    --instance-ids "$INSTANCE_ID" \
+    --document-name AWS-RunPatchBaseline \
+    --parameters Operation=Scan \
+    --comment "Room 4.2 identification scan" \
+    --query "Command.CommandId" \
+    --output text)
+
+$ echo $SCAN_COMMAND_ID
+
+It might take some time, usually under 1 minute, for the scan to finish. Poll until the status is Success.
+
+
+Step 2 : Monitor and Poll Scan Command Status
+
+
+Terminal
+$ aws ssm get-command-invocation \
+    --command-id "$SCAN_COMMAND_ID" \
+    --instance-id "$INSTANCE_ID" \
+    --query "{Status:Status,StatusDetails:StatusDetails}" \
+    --output table
+
+------------------------------
+|    GetCommandInvocation    |
++----------+-----------------+
+|  Status  |  StatusDetails  |
++----------+-----------------+
+|  Success |  Success        |
++----------+-----------------+
+
+
+Step 3: Enumerate Missing and Installed Patch Totals
+Run the following command to see how many patches are missing, installed, and failed on this instance.
+
+
+Terminal
+$ aws ssm describe-instance-patch-states \
+  --instance-ids "$INSTANCE_ID" \
+  --query "InstancePatchStates[0].{Missing:MissingCount,Installed:InstalledCount,Failed:FailedCount,OperationEnd:OperationEndTime}" \
+  --output table
+
+----------------------------------------------------------------
+|                DescribeInstancePatchStates                   |
++----------+-----------+----------+----------------------------+
+|  Failed  | Installed | Missing  |       OperationEnd         |
++----------+-----------+----------+----------------------------+
+|  0       |  142      |  17      |  2026-01-10T04:12:00.000Z  |
++----------+-----------+----------+----------------------------+
+
+[FINDING]: The output may vary, but it should show a number of missing patches.
+Note: The lab uses the latest Amazon AMI. AWS keeps a tight ship when patching AMIs, so there is a slight chance that the image is fully patched and the Missing field is 0.
+
+
+Step 4: Retrieve Flag Metadata Tag
+An EC2 tag hides the flag. Run the following command to retrieve it.
+
+
+Terminal
+$ aws ec2 describe-tags \
+    --filters "Name=resource-id,Values=$INSTANCE_ID" \
+    --query "Tags[?Key=='Flag'].Value" \
+    --output text
+
+[REDACTED] 
+
+Summary of Findings & Implementation
+--------------------------------------------------
+1. Managed Node Readiness: Confirmed SSM Agent version 3.3.4108.0 in an Online state across target workload i-08610dc72b44621f0.
+2. Assessment Scan Execution: Successfully dispatched AWS-RunPatchBaseline via SSM Run Command without local agent execution delays.
+3. Patch Debt Baseline: Identified 17 unapplied patches across the Amazon Linux instance, establishing the operational requirement for automated remediation.
+4. Flag Retrieval: Successfully verified environment status via resource metadata tag query
+`,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
+    title: "AWS EC2 Security Remediation: Unpatched Instance",
+    description: "Remediating OS patch debt by triggering automated patch installation via SSM Run Command and verifying compliance status.",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "laptop.jpg",
+    detail: ` Phase 1: Environment Initialization & Target Mapping
+--------------------------------------------------
+
+Now that you have confirmed the instance needs patching. You will use Systems Manager Run Command to trigger a patch install operation and verify that the instance reaches a compliant state.
+
+Note: AWS-RunPatchBaseline is a managed document used by AWS Systems Manager (SSM) to automate patching managed nodes (EC2 instances or on-premises servers).
+
+Run AWS-RunPatchBaseline in Install mode against the lab instance.
+Poll the command status until the operation completes.
+Re-check the patch state to confirm the missing count has dropped.
+Run the Patch Baseline Install
+You will need the instance ID, so make sure it is in the appropriate environment variable. The command used to trigger the installation will return a command ID that you will poll later, so it's better to save that as well.
+
+
+Step 1: Save Target Instance Context
+
+
+Terminal
+$ INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Purpose,Values=room-42-lab" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text)
+
+$ echo "Target Instance ID: $INSTANCE_ID"
+
+
+ Phase 2: Automated Patch Installation
+--------------------------------------------------
+Step 1: Dispatch AWS-RunPatchBaseline Execution Document (Operation=Install
+
+$ PATCH_COMMAND_ID=$(aws ssm send-command \
+    --instance-ids "$INSTANCE_ID" \
+    --document-name AWS-RunPatchBaseline \
+    --parameters Operation=Install \
+    --comment "Room 4.2 remediation patch install" \
+    --query "Command.CommandId" \
+    --output text) 
+
+$ echo $PATCH_COMMAND_ID    
+
+
+Step 2: Monitor and Poll Remediation Invocation Status
+
+
+Terminal
+$ aws ssm get-command-invocation \
+  --command-id "$PATCH_COMMAND_ID" \
+  --instance-id "$INSTANCE_ID" \
+  --query "{Status:Status,StatusDetails:StatusDetails}" \
+  --output table
+
+------------------------------
+|    GetCommandInvocation    |
++----------+-----------------+
+|  Status  |  StatusDetails  |
++----------+-----------------+
+|  Success |  Success        |
++----------+-----------------+
+
+
+
+ Phase 3: Compliance Verification & Flag Extraction
+--------------------------------------------------
+
+Step 1: Recheck Instance Patch Baseline State & Run Automated Verification Engine
+Once the command succeeds, rerun the patch state check to confirm the missing count has dropped. Ideally, it will drop to 0.
+
+
+Terminal
+$ aws ssm describe-instance-patch-states \
+    --instance-ids "$INSTANCE_ID" \
+    --query "InstancePatchStates[0].{Missing:MissingCount,Installed:InstalledCount,Failed:FailedCount,OperationEnd:OperationEndTime}" \
+    --output table
+
+-----------------------------------------------------------------
+|                  DescribeInstancePatchStates                  |
++--------+------------+----------+------------------------------+
+| Failed | Installed  | Missing  |        OperationEnd          |
++--------+------------+----------+------------------------------+
+|  0     |  159       |  0       |  2026-05-06T14:21:00+00:00   |
++--------+------------+----------+------------------------------+
+
+[FINDING]: Missing patch count successfully reduced to 0. Installed package total increased from 142 to 159.
+The instance is now patched. The status might take some time to propagate, usually under a minute, so rerun the verification function if it fails on the first pass.
+
+
+Step 2: Invoke lambda automated verification engine
+
+
+Terminal
+$ aws lambda invoke \
+  --function-name AWS402-VerifyRemediation \
+  --payload '{}' \
+  /tmp/out.json && python3 -m json.tool /tmp/out.json
+
+[...]
+{
+    "status": "PASS",
+    "patch_command_check": "PASS - successful AWS-RunPatchBaseline install found for the lab instance",
+    "flag": "[REDACTED]"
+}
+
+Summary of Findings & Remediation State
+--------------------------------------------------
+1. Patch Execution Deployment: Dispatched SSM document AWS-RunPatchBaseline with Operation=Install, remediating 17 missing security updates.
+2. Compliance State Transition: Verified that MissingCount reached 0 and total InstalledCount increased from 142 to 159.
+3. Verification Validation: AWS402-VerifyRemediation assertion passed successfully.
+ `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
 ];
