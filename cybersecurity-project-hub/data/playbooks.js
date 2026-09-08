@@ -1975,33 +1975,378 @@ Summary of Findings & Implementation
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
+    title: "AWS EC2 Security Identification: The Exposed Port",
+    description: "Auditing an EC2 instance to identify publicly accessible management ports (SSH/22) and evaluating AWS Systems Manager (SSM) Session Manager as a secure alternative access path.",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "/cable.jpg",
+    detail: `Phase 1: Environment Initialization & Context Capture
+--------------------------------------------------
+Retrieving required target EC2 instance and account identifiers before starting security analysis.
+
+
+Step 1: Capture Target Identifiers
+
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ INSTANCE_ID=$(aws ec2 describe-instances \
+      --filters "Name=tag:Purpose,Values=room-41-lab" \
+                "Name=instance-state-name,Values=running" \
+      --query "Reservations[0].Instances[0].InstanceId" \
+      --output text)
+
+$ echo "Account ID: $ACCOUNT_ID | Instance ID: $INSTANCE_ID"
+
+
+Phase 2: Security Group Inbound Rule Inspection
+--------------------------------------------------
+Auditing the attached network security group to identify public inbound exposure vectors.
+
+
+Step 1: Inspect Attached Security Group Inbound Rules
+
+
+Terminal
+$ SG_ID=$(aws ec2 describe-instances \
+      --instance-ids "$INSTANCE_ID" \
+      --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+      --output text)
+
+$ echo $SG_ID
+
+$ aws ec2 describe-security-groups \
+      --group-ids "$SG_ID" \
+      --query "SecurityGroups[0].IpPermissions" \
+      --output json
+
+[
+    {
+        "IpProtocol": "tcp",
+        "FromPort": 22,
+        "ToPort": 22,
+        "UserIdGroupPairs": [],
+        "IpRanges": [
+            {
+                "CidrIp": "0.0.0.0/0"
+            }
+        ],
+        "Ipv6Ranges": [],
+        "PrefixListIds": []
+    }
+]
+
+[FINDING 1]: The security group attached to the instance allows SSH (Port 22) connections from anywhere (CIDR 0.0.0.0/0).
+
+
+Phase 3: Control Plane Alternative Access Verification
+--------------------------------------------------
+Evaluating whether AWS Systems Manager Session Manager agent is active to replace exposed inbound management ports.
+
+
+Step 1: Check Session Manager Status
+
+
+Terminal
+$ aws ssm describe-instance-information \
+      --filters "Key=InstanceIds,Values=$INSTANCE_ID" \
+      --query "InstanceInformationList[0].{Ping:PingStatus,Platform:PlatformName,Agent:AgentVersion}" \
+      --output table
+
+------------------------------------------
+|       DescribeInstanceInformation      |
++-------------+---------+----------------+
+|    Agent    |  Ping   |   Platform     |
++-------------+---------+----------------+
+|  3.3.4108.0 |  Online |  Amazon Linux  |
++-------------+---------+----------------+
+
+[FINDING 2]: The instance is already registered with the AWS Systems Manager Session Manager service, and it is Online.
+
+
+Step 2: Retrieve Incident Verification Metadata
+
+
+Terminal
+$ aws ec2 describe-tags \
+      --filters "Name=resource-id,Values=$INSTANCE_ID" \
+      --query "Tags[?Key=='Flag'].Value" \
+      --output text
+
+[REDACTED]
+
+Summary of Findings & Risk Assessment
+--------------------------------------------------
+1. The lab instance has TCP/22 open to 0.0.0.0/0 through its attached security group, so any host on the internet can attempt an SSH login at any time.
+2. AWS Systems Manager is already online on this instance, providing an authenticated, auditable access path over the AWS control plane without any inbound port.
+3. The public SSH rule is entirely redundant. The blast radius of this misconfiguration extends to every credential that could be brute-forced or found stored on the instance after initial access. 
+`,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
+    title: "AWS EC2 Security Remediation: The Exposed Port",
+    description: "Executing attack surface reduction by revoking public inbound SSH rules (0.0.0.0/0) from EC2 security groups and validating secure, keyless access through AWS Systems Manager Session Manager.",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "/motherboard.jpg",
+    detail: `Phase 1: Target Identification & Context Capture
+--------------------------------------------------
+Retrieving target EC2 instance and security group identifiers to target the remediation scope.
+
+
+Step 1: Capture Target Identifiers
+
+
+Terminal 
+$ INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Purpose,Values=room-41-lab" \
+  "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text)
+
+$ SG_ID=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+  --output text)
+
+$ echo "Target Instance: $INSTANCE_ID | Target SG: $SG_ID"
+ 
+ 
+Phase 2: Inbound Attack Surface Revocation
+--------------------------------------------------
+Revoking the over-permissive inbound TCP/22 ingress rule from the active security group.
+
+
+Terminal 
+$ aws ec2 revoke-security-group-ingress \
+      --group-id "$SG_ID" \
+      --ip-permissions '[{"IpProtocol":"tcp","FromPort":22,"ToPort":22,"IpRanges":[{"CidrIp":"0.0.0.0/0"}]}]'
+
+{
+    "Return": true,
+    "RevokedSecurityGroupRules": [
+        {
+            "SecurityGroupRuleId": "sgr-0dc75616559f8d3b0",
+            "GroupId": "sg-06b139d58716dbe9c",
+            "IsEgress": false,
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIpv4": "0.0.0.0/0"
+        }
+    ]
+}
+
+
+Step 2: Confirm Inbound Rule Clearing
+Review the security group rules to validate that the SSH rule has been removed.
+
+
+Terminal
+$ aws ec2 describe-security-groups \
+  --group-ids "$SG_ID" \
+  --query "SecurityGroups[0].IpPermissions" \
+  --output json
+
+[ ]
+
+An empty output means there are no (more) rules.
+
+
+Phase 3: Secure Management Path & Remediation Verification
+--------------------------------------------------
+Validating interactive management connectivity via AWS Systems Manager Session Manager and running automated compliance checks.
+
+
+Step 1: Verify SSM Control Plane Shell Access
+
+
+Terminal
+$ aws ssm start-session --target "$INSTANCE_ID"
+
+Starting session with SessionId: ************************
+
+sh-5.2$ whoami
+ssm-user
+
+sh-5.2$ exit
+
+Confirmation that management connectivity still works. 
+
+
+Step 2: Execute Automated Remediation Verification Engine
+
+
+Terminal 
+$ aws lambda invoke \
+      --function-name AWS401-VerifyRemediation \
+      --payload '{}' \
+      /tmp/out.json && python3 -m json.tool /tmp/out.json
+
+[...]
+{
+    "status": "PASS",
+    "security_group_check": "PASS - no public SSH or RDP rule found on the lab instance",
+    "flag": "[REDACTED]"
+}
+
+
+Summary of Actions & Security Outcome
+--------------------------------------------------
+1. Attack Surface Reduction: Public ingress access via TCP/22 (0.0.0.0/0) was successfully revoked from security group [], effectively immunizing the instance against external port scanning and SSH brute-force campaigns.
+2. Zero-Ingress Control Plane Access: Confirmed that interactive administrative access is fully preserved via SSM Session Manager (ssm-user context) without requiring open inbound security group ports or public IP exposure.
+3. Automated Validation: Verified remediation compliance via AWS Lambda engine, confirming zero open management ingress rules (SSH/RDP) remain on the target environment.
+ `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
-    category: "GOVERNANCE",
+    title: "AWS EC2 Security Secure Build: The Exposed Port",
+    description: "Building a secure-by-default EC2 architecture with zero inbound management ports, no SSH key pair attachment, IAM SSM instance profile authorization, and private network placement.",
+    category: "HARDENING",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "/computer_chip.jpg",
+    detail: `Phase 1: Environment Context & Network Target Identification
+--------------------------------------------------
+Retrieving required Subnet ID and VPC ID parameters from the target environment baseline.
+
+Before launching any instance, you can run through these questions:
+
+What access path do you use for administration? Session Manager - no inbound port needed.
+What inbound rules does the security group require? None for management. Outbound to AWS endpoints is sufficient.
+What IAM role does the instance need? One that includes AmazonSSMManagedInstanceCore so the SSM agent can register.
+What should happen to the SSH key pair? It is not needed. Leave it out entirely.
+
+
+Step 1: Capture Target VPC and Subnet Environment Context
+
+
+Terminal
+$ INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Purpose,Values=room-41-lab" \
+  "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text)
+
+$ SUBNET_ID=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].SubnetId" \
+  --output text)
+
+$ VPC_ID=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].VpcId" \
+  --output text)
+
+$ echo "Subnet ID: $SUBNET_ID | VPC ID: $VPC_ID"
+
+
+Phase 2: Zero-Ingress Security Group Provisioning
+--------------------------------------------------
+Provisioning a strict network firewall policy containing zero inbound rules for management or remote shell access.
+
+
+Step 1: Create Security Group with Zero Inbound Rules
+
+
+Terminal
+$ SECURE_SG=$(aws ec2 create-security-group \
+      --group-name "room41-no-inbound-sg" \
+      --description "Room 4.1 secure management SG - no inbound rules" \
+      --vpc-id "$VPC_ID" \
+      --query GroupId \
+      --output text)
+ 
+$ echo $SECURE_SG
+
+
+Phase 3: Keyless, Private Managed EC2 Instance Launch
+--------------------------------------------------
+Launching an EC2 instance without an SSH key pair, without a public IP address, and bound to SSM IAM instance authorization.
+
+
+Step 1: Query Latest Amazon Linux 2023 AMI ID
+
+
+Terminal
+$ AMI_ID=$(aws ec2 describe-images \
+  --owners amazon \
+  --filters "Name=name,Values=al2023-ami-*-x86_64" \
+  --query "sort_by(Images,&CreationDate)[-1].ImageId" \
+  --output text)
+ 
+$ echo $AMI_ID
+
+
+Step 2: Launch Hardened SSM-Managed EC2 Instance
+
+
+Terminal
+$ aws ec2 run-instances \
+    --image-id "$AMI_ID" \
+    --instance-type t3.micro \
+    --subnet-id "$SUBNET_ID" \
+    --security-group-ids "$SECURE_SG" \
+    --iam-instance-profile Name="Room41ManagedInstanceProfile" \
+    --no-associate-public-ip-address \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=secure-ssm-instance},{Key=Purpose,Value=room-41-secure-build}]'
+
+{
+    "ReservationId": "r-0fc1b869999de7fe5",
+    "OwnerId": "555488996595",
+    "Groups": [],
+    "Instances": [
+        {
+            "Architecture": "x86_64",
+            "BlockDeviceMappings": [],
+            "ClientToken": "f0db7363-b908-4b9b-8388-e43b751dd06c",
+            "EbsOptimized": false,
+            "EnaSupport": true,
+            "Hypervisor": "xen",
+            "IamInstanceProfile": {
+                "Arn": "arn:aws:iam::555488996595:instance-profile/Room41ManagedInstanceProfile",
+                "Id": "AIPAYCVNZNTZ2NG3ONFAF"
+            },
+[...]
+
+[SECURITY CONTROL]: The --key-name parameter is intentionally left out. This instance has no SSH key pair associated with it, so it cannot be accessed via SSH from the start.
+
+
+Phase 4: Architecture Baseline Verification
+--------------------------------------------------
+Validating compliance of the newly provisioned secure instance via automated verification scripts.
+
+
+Step 1: Execute Automated Secure Build Verification Engine
+
+
+Terminal
+$ aws lambda invoke \
+  --function-name AWS401-VerifySecureBuild \
+  --payload '{}' \
+  /tmp/out.json && python3 -m json.tool /tmp/out.json
+
+[...]
+{
+    "status": "PASS",
+    "secure_instance_check": "PASS - secure-ssm-instance found with no public SSH or RDP exposure",
+    "flag": "[REDACTED]"
+}
+
+
+Summary of Security Principles & Core Takeaways
+--------------------------------------------------
+1. Zero Inbound Ingress Baseline: The optimal number of inbound SSH (22) or RDP (3389) security group rules for administrative access is zero. Management must route over the encrypted AWS control plane via Session Manager.
+2. Keyless Architecture: Omitting SSH key pair attachment during launch eliminates key management overhead and prevents key leakage or unauthorized SSH persistence vectors.
+3. Private Network Placement: Disabling public IP allocation (--no-associate-public-ip-address) isolates host interfaces from direct internet scanning, relying entirely on IAM policy (AmazonSSMManagedInstanceCore) for brokered shell access.
+4. Continuous Audit Alignment: Automated scanners probe exposed 0.0.0.0/0 management ports within minutes. Preventive zero-ingress baselines remove the reliance on reactive brute-force alarms (e.g., GuardDuty UnauthorizedAccess:EC2/SSHBruteForce).
+`,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
