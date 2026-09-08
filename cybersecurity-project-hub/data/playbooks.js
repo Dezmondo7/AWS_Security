@@ -1687,23 +1687,291 @@ Summary of Remediation Findings
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
+    title: "AWS IAM Security Secure Build: Engineering an IAM & Defense Evasion Monitoring Baseline ",
+    description: "Architecting a multi-tiered security baseline using EventBridge event pattern categorization, CloudTrail defense-evasion detection, and CloudWatch anomaly burst threshold alarms.",
     category: "GOVERNANCE",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
-    sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
-  },
-  {
-    title: "Deploy a detective control",
-    category: "GOVERNANCE",
-    steps: "5 steps",
-    estimate: "11 min",
-    state: "Draft",
-    image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    image: "/lightspeed.jpg",
+    detail: ` Phase 1: Environment Initialization & Context Capture
+--------------------------------------------------
+Establishing target context and mapping destination SNS notification channels.
+
+
+Step 1: Save Environment Context
+
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ SNS_ARN="arn:aws:sns:us-east-1:\${ACCOUNT_ID}:iam-change-alerts"
+
+$ echo "ACCOUNT_ID=$ACCOUNT_ID  SNS_ARN=$SNS_ARN"
+
+
+Phase 2: Tiered EventBridge Rule Deployment
+--------------------------------------------------
+Constructing severity-based event patterns to route critical IAM mutations and CloudTrail defense evasion attempts.
+It is a good practice to organize the events you want to monitor by severity:
+
+Critical - immediate investigation required:
+AttachUserPolicy, AttachRolePolicy, AttachGroupPolicy
+PutUserPolicy, PutRolePolicy, PutGroupPolicy
+CreateUser
+UpdateAssumeRolePolicy
+DeleteTrail, StopLogging
+PutRetentionPolicy
+
+High - review within 1-2 hours:
+CreateAccessKey, CreateLoginProfile, DeactivateMFADevice
+DeleteUserPolicy, DetachUserPolicy
+
+Medium - review within 24 hours:
+CreateRole, CreateGroup, AddUserToGroup
+Create EventBridge Rules
+Create separate rules for better routing:
+
+Critical -> direct message/all channels.
+High -> Slack.
+Medium -> email.
+
+
+Step 1: Deploy Critical IAM Event Pattern and attach to SNS Topic.
+
+
+Terminal
+$ cat > ./iam-critical-pattern.json << 'EOF'
+{
+  "source": ["aws.iam"],
+  "detail-type": ["AWS API Call via CloudTrail"],
+  "detail": {
+    "eventSource": ["iam.amazonaws.com"],
+    "eventName": [
+      "AttachUserPolicy",
+      "AttachRolePolicy",
+      "AttachGroupPolicy",
+      "PutUserPolicy",
+      "PutRolePolicy",
+      "PutGroupPolicy",
+      "CreateUser",
+      "UpdateAssumeRolePolicy"
+    ]
+  }
+}
+EOF
+
+Create the new rule for the IAM events.
+
+
+Terminal
+$ aws events put-rule \
+    --name iam-critical-changes \
+    --event-pattern file://iam-critical-pattern.json \
+    --state ENABLED \
+    --description "Critical IAM changes requiring immediate investigation"
+
+{
+    "RuleArn": "arn:aws:events:us-east-1:569945792897:rule/iam-critical-changes"
+}
+
+Attach it to the SNS topic.
+
+
+Terminal
+$ aws events put-targets \
+    --rule iam-critical-changes \
+    --targets "Id=sns-critical,Arn=$SNS_ARN"
+
+{
+    "FailedEntryCount": 0,
+    "FailedEntries": []
+}
+
+
+
+Step 2: Deploy CloudTrail Audit Tampering Pattern (Defense Evasion) and add to SNS Topic
+
+
+Terminal
+$ cat > ./audit-tampering-pattern.json << 'EOF'
+{
+  "source": ["aws.cloudtrail"],
+  "detail-type": ["AWS API Call via CloudTrail"],
+  "detail": {
+    "eventSource": ["cloudtrail.amazonaws.com"],
+    "eventName": [
+      "DeleteTrail",
+      "StopLogging",
+      "UpdateTrail",
+      "PutEventSelectors"
+    ]
+  }
+}
+EOF
+
+Create the log rule.
+
+
+Terminal
+$ aws events put-rule \
+    --name audit-trail-tampering \
+    --event-pattern file://audit-tampering-pattern.json \
+    --state ENABLED \
+    --description "Alerts on CloudTrail tampering - defense evasion indicator"
+
+{
+    "RuleArn": "arn:aws:events:us-east-1:569945792897:rule/audit-trail-tampering"
+}
+
+Add the SNS target.
+
+
+Terminal
+$ aws events put-targets \
+    --rule audit-trail-tampering \
+    --targets "Id=sns-audit,Arn=$SNS_ARN"
+
+{
+    "FailedEntryCount": 0,
+    "FailedEntries": []
+}
+
+Phase 3: Anomaly Burst Monitoring via CloudWatch
+--------------------------------------------------
+Establishing log metric filters and threshold alarms to detect high-frequency IAM mutation bursts.
+Amazon CloudWatch is a monitoring and observability service that collects, monitors, and analyzes logs, metrics, and events.
+
+
+Step 1: Create CloudTrail Metric Filter
+
+
+Terminal
+$ aws logs put-metric-filter \
+  --log-group-name aws-cloudtrail-logs \
+  --filter-name IAMWriteEventCount \
+  --filter-pattern '{ ($.eventSource = "iam.amazonaws.com") && (($.eventName = "AttachUserPolicy") || ($.eventName = "CreateUser") || ($.eventName = "CreateAccessKey") || ($.eventName = "PutUserPolicy") || ($.eventName = "AttachRolePolicy") || ($.eventName = "UpdateAssumeRolePolicy")) }' \
+  --metric-transformations \
+    metricName=IAMHighRiskEventCount,metricNamespace=SecurityMetrics,metricValue=1,defaultValue=0
+ 
+Step 2: Provision Anomaly Burst Alarm (>3 events / 5 min)    
+Creates an alarm when more than 3 IAM write events happen within 5 minutes.
+
+
+Terminal
+$ aws cloudwatch put-metric-alarm \
+  --alarm-name iam-change-burst \
+  --metric-name IAMHighRiskEventCount \
+  --namespace SecurityMetrics \
+  --statistic Sum \
+  --period 300 \
+  --threshold 3 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions $SNS_ARN \
+  --alarm-description "Alerts when more than 3 high-risk IAM events occur within 5 minutes"
+
+
+  Phase 4: Monitoring Baseline Verification
+--------------------------------------------------
+Validating active state across EventBridge, SNS, CloudWatch, and Log Metric Filters.
+
+
+Step 1: Verify EventBridge Rules
+
+
+Terminal
+$ aws events list-rules \
+    --query "Rules[*].{Name:Name,State:State}" --output table
+
+---------------------------------------------------------------------------------
+|                                   ListRules                                   |
++--------------------------------------------------------------------+----------+
+|                                Name                                |  State   |
++--------------------------------------------------------------------+----------+
+[...]
+|  audit-trail-tampering                                             |  ENABLED |
+|  iam-critical-changes                                              |  ENABLED |
+|  iam-high-risk-changes                                             |  ENABLED |
++--------------------------------------------------------------------+----------+
+
+
+Step 2: Verify SNS Topic Subscriptions
+
+
+Terminal
+$ aws sns list-subscriptions-by-topic \
+    --topic-arn $SNS_ARN \
+    --query "Subscriptions[*].{Endpoint:Endpoint,Protocol:Protocol}" --output table
+
+------------------------------------------
+|        ListSubscriptionsByTopic        |
++---------------------------+------------+
+|         Endpoint          | Protocol   |
++---------------------------+------------+
+|  hadley.geno@minafter.com |  email     |
++---------------------------+------------+
+
+
+Step 3: Verify CloudWatch Alarms & Metric Filters
+Note: CloudWatch alarms can take 2-10 minutes to transition out of the INSUFFICIENT_DATA state, but this time depends on the alarm's evaluation period and metric type.
+
+
+Terminal
+$ aws cloudwatch describe-alarms \
+    --alarm-names iam-change-burst \
+    --query "MetricAlarms[*].{Name:AlarmName,State:StateValue,Metric:MetricName}" --output table
+
+--------------------------------------------------------
+|                    DescribeAlarms                    |
++------------------------+--------------------+--------+
+|         Metric         |       Name         | State  |
++------------------------+--------------------+--------+
+|  IAMHighRiskEventCount |  iam-change-burst  |  OK    |
++------------------------+--------------------+--------+
+
+
+Step 3: Verify CloudWatch Alarms & Metric Filters
+
+
+Terminal
+$ aws logs describe-metric-filters \
+  --log-group-name aws-cloudtrail-logs \
+  --query "metricFilters[*].{Name:filterName,Pattern:filterPattern}" --output table
+
+-------------------------------------------------------------
+|                  DescribeMetricFilters                    |
++---------+-------------------------------------------------+
+|  Name   |               IAMWriteEventCount                |
+|  Pattern|  [{ ($.eventSource = "iam.amazonaws.com") [...] |
++---------+-------------------------------------------------+
+
+
+Step 4: Invoke Automated Verification Engine, you can run the helper Lambda function to retrieve the flag.
+
+
+Terminal
+$ aws lambda invoke \
+    --function-name AWS204-VerifySecureBuild \
+    --payload '{}' \
+    /tmp/verify-secure.json && python3 -m json.tool /tmp/verify-secure.json
+
+[...]
+{
+    "iam-high-risk-changes_check": "PASS — enabled with target", 
+    "audit-trail-tampering_check": "PASS — enabled with target",
+    "status": "PASS",
+    "flag": "[REDACTED]"
+}
+
+
+Summary of Findings & Implementation
+--------------------------------------------------
+1. Severity-Based Alert Routing: Tiered event pattern logic into Critical (direct notification), High (SIEM/Slack), and Medium levels to eliminate alert fatigue.
+2. Anti-Defense Evasion Control: Implemented real-time detection rule audit-trail-tampering monitoring CloudTrail modification calls (DeleteTrail, StopLogging, PutEventSelectors).
+3. Anomaly & Burst Detection: Engineered custom CloudWatch Metric Filter (IAMWriteEventCount) coupled with an alarm firing on threshold bursts (>3 critical mutations within 300 seconds).
+4. Validation Status: Comprehensive verification passed across all EventBridge rules, CloudWatch alarms, metric filters, and SNS endpoints.
+`,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
