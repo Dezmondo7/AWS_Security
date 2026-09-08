@@ -460,7 +460,6 @@ $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 $ BOUNDARY_ARN="arn:aws:iam::{ACCOUNT_ID}:policy/Room23-DevRoleBoundary"
 
 $ echo "ACCOUNT_ID=\${ACCOUNT_ID} BOUNDARY_ARN=\${BOUNDARY_ARN}"
-ACCOUNT_ID=304038454789 BOUNDARY_ARN=arn:aws:iam::304038454789:policy/Room23-DevRoleBoundary
 
 Save the Policies
 The trust policy defines who can assume the role. For an EC2, only the EC2 service should be allowed. Key points to note:
@@ -661,7 +660,6 @@ Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 $ echo $ACCOUNT_ID
-227184855672
 
 
 Step 2: Enumerate Account Users
@@ -1196,7 +1194,7 @@ Terminal
 $ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 $ echo $ACCOUNT_ID
-569945792897
+
 
 Step 2: Enumerate CloudTrail Trails
 Identify active audit trails capturing global service events (IAM operations are globally audited in us-east-1 regardless of source region):
@@ -1432,13 +1430,260 @@ Summary of Investigation Findings
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
-    title: "Deploy a detective control",
-    category: "GOVERNANCE",
+    title: "AWS IAM Security Remediation: The Silence of the IAM",
+    description: "Reverting unauthorized IAM changes, purging backdoor credentials, and building an automated EventBridge-to-SNS pipeline for real-time threat detection.",
+    category: "Security",
     steps: "5 steps",
     estimate: "11 min",
     state: "Draft",
     image: "https://images.unsplash.com/photo-1510511459019-5dda7724fd87?w=1200&q=80",
-    detail: ` `,
+    detail: ` Phase 1: Environment Initialization & Context Capture
+--------------------------------------------------
+Retrieving required AWS account and identity identifiers before initiating rollback.
+
+
+Step 1: Capture Target Identifiers
+
+
+Terminal
+$ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+$ ROGUE_KEY_ID=$(aws iam list-access-keys --user-name app-deployer \
+    --query "sort_by(AccessKeyMetadata, &CreateDate)[-1].AccessKeyId" \
+    --output text)
+
+$ echo "ACCOUNT_ID=$ACCOUNT_ID  ROGUE_KEY_ID=$ROGUE_KEY_ID"
+
+
+Phase 2: Access Revocation & Backdoor Cleanup
+--------------------------------------------------
+Detaching AdministratorAccess policy and revoking active backdoored access keys
+
+
+Step 1: Detach Administrative Policy
+
+
+Terminal
+$ aws iam detach-user-policy \
+    --user-name app-deployer \
+    --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
+
+
+Step 2: Verify Policy Detachment
+
+
+Terminal
+$ aws iam list-attached-user-policies --user-name app-deployer --output table
+
+--------------------------
+|ListAttachedUserPolicies|
++------------------------+
+
+
+Step 3: Deactivate and Remove Rogue Credentials
+
+Note: In a real environment, you must verify that the change was not legitimate before rolling it back.
+
+
+Terminal
+$ aws iam update-access-key \
+    --user-name app-deployer \
+    --access-key-id $ROGUE_KEY_ID \
+    --status Inactive
+
+$ aws iam delete-access-key \
+    --user-name app-deployer \
+    --access-key-id $ROGUE_KEY_ID
+
+
+Step 4: Verify Credential Erasure
+
+
+Terminal
+$ aws iam list-access-keys --user-name app-deployer --output table
+
+----------------
+|ListAccessKeys|
++--------------+
+
+
+Phase 3: Automated Real-Time Threat Detection Deployment
+--------------------------------------------------
+Constructing an Amazon EventBridge rule and SNS notification topic to alert on high-risk IAM mutation events.
+
+
+Step 1: Provision SNS Alert Topic
+
+
+Terminal 
+$ SNS_ARN=$(aws sns create-topic --name iam-change-alerts \
+    --query TopicArn --output text)
+
+$ echo $SNS_ARN
+arn:aws:sns:us-east-1:569945792897:iam-change-alerts
+
+ 
+Step 2: Define EventBridge Filter Pattern
+Amazon EventBridge is a serverless, event-driven service that enables different services to communicate asynchronously via an event bus.
+
+
+Terminal
+$ aws sns subscribe \
+    --topic-arn $SNS_ARN \
+    --protocol email \
+    --notification-endpoint [REPLACE WITH EMAIL]
+
+{
+    "SubscriptionArn": "pending confirmation"
+}
+    
+Check the inbox and confirm the AWS subscription.
+Create the event pattern for IAM changes.
+
+
+Terminal
+$ cat > ./iam-event-pattern.json << 'EOF'
+{
+  "source": ["aws.iam"],
+  "detail-type": ["AWS API Call via CloudTrail"],
+  "detail": {
+    "eventSource": ["iam.amazonaws.com"],
+    "eventName": [
+      "AttachUserPolicy",
+      "AttachRolePolicy",
+      "AttachGroupPolicy",
+      "PutUserPolicy",
+      "PutRolePolicy",
+      "PutGroupPolicy",
+      "CreateUser",
+      "CreateAccessKey",
+      "CreateLoginProfile",
+      "UpdateAssumeRolePolicy",
+      "DeactivateMFADevice",
+      "DeleteUser",
+      "DeleteAccessKey"
+    ]
+  }
+}
+EOF
+
+
+Step 3: Deploy EventBridge Detection Rule using the pattern defined.
+
+
+Terminal
+$ aws events put-rule \
+    --name iam-high-risk-changes \
+    --event-pattern file://iam-event-pattern.json \
+    --state ENABLED \
+    --description "Alerts on high-risk IAM API calls"
+
+{
+    "RuleArn": "arn:aws:events:us-east-1:569945792897:rule/iam-high-risk-changes"
+}
+
+
+Step 4: Bind SNS Destination Target
+
+
+Terminal
+$ aws events put-targets \
+    --rule iam-high-risk-changes \
+    --targets "Id=sns-iam-alerts,Arn=$SNS_ARN"
+
+{
+    "FailedEntryCount": 0,
+    "FailedEntries": []
+}
+
+
+Step 5: Apply SNS Resource Policy for EventBridge Access
+If you perform the previous step in the AWS Console, this policy is automatically added.
+
+
+Terminal
+$ cat > /tmp/iam-topic-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DefaultOwnerAccess",
+      "Effect": "Allow",
+      "Principal": {"AWS": "*"},
+      "Action": [
+        "SNS:GetTopicAttributes","SNS:SetTopicAttributes","SNS:AddPermission",
+        "SNS:RemovePermission","SNS:DeleteTopic","SNS:Subscribe",
+        "SNS:ListSubscriptionsByTopic","SNS:Publish"
+      ],
+      "Resource": "\${SNS_ARN}",
+      "Condition": {"StringEquals": {"AWS:SourceOwner": "\${ACCOUNT_ID}"}}
+    },
+    {
+      "Sid": "AllowEventBridgePublish",
+      "Effect": "Allow",
+      "Principal": {"Service": "events.amazonaws.com"},
+      "Action": "SNS:Publish",
+      "Resource": "\${SNS_ARN}"
+    }
+  ]
+}
+EOF
+
+
+Terminal
+$ aws sns set-topic-attributes \
+  --topic-arn $SNS_ARN \
+  --attribute-name Policy \
+  --attribute-value file:///tmp/iam-topic-policy.json
+
+
+Phase 4: Detection Pipeline Verification
+--------------------------------------------------
+Triggering a controlled event to validate real-time alert dispatching.
+
+
+Step 1: Trigger Controlled Test Event
+
+
+Terminal
+$ TEST_KEY=$(aws iam create-access-key --user-name app-deployer \
+    --query 'AccessKey.AccessKeyId' --output text)
+
+Note: The email might take ~1-3 minutes to land in the inbox.
+
+
+Step 2: Invoke Automated Remediation Verification
+You should clean up the test key.
+
+
+Terminal
+$ aws iam delete-access-key \
+    --user-name app-deployer \
+    --access-key-id $TEST_KEY
+
+Once everything is set up, you can run the helper Lambda function to fetch your well-earned flag.
+
+
+Terminal
+$ aws lambda invoke \
+    --function-name AWS204-VerifyRemediation \
+    --payload '{}' \
+    /tmp/verify-output.json && python3 -m json.tool /tmp/verify-output.json
+
+[...]
+{
+    "admin_policy_check": "PASS — AdministratorAccess removed",
+    "key_check": "PASS — no active keys (all rogue keys removed)", "status": "PASS",
+    "flag": "[REDACTED]"
+}
+
+Summary of Remediation Findings
+--------------------------------------------------
+1. Unauthorized Privilege Escalation Remediation: Successfully revoked the directly attached AdministratorAccess managed policy from low-privilege user app-deployer.
+2. Backdoor Persistence Eradication: Identified, deactivated, and deleted active programmatic credentials created during the intrusion window.
+3. Automated Real-Time Threat Detection: Closed the visibility gap by deploying an Amazon EventBridge event pattern that captures 13 high-risk IAM mutation calls and dispatches real-time alerts via Amazon SNS.
+4. Validation Status: System verification confirmed 0 remaining rogue access keys and zero unmonitored administrative attachments.
+ `,
     sequence: ["Define the signal", "Configure the rule", "Test the escalation"]
   },
   {
