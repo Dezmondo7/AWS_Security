@@ -7,7 +7,7 @@ export const projects = [
     steps: "8 steps",
     estimate: "12 min",
     state: "Ready",
-    image: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1200&q=80",
+    image: "/deploying_ec2.png",
     detail: ` Launching an EC2 Instance & Configuring a user data script
 
 Step 1    
