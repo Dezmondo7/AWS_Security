@@ -1,14 +1,69 @@
 
 export const projects = [
   {
-    title: "CloudFront ",
-    description: "Investigation: The EC2 instance allows unauthenticated HTTP GET requests through IMDSv1. The role has an attached over-privileged policy that has broad S3 access. ",
-    category: "SECURITY",
+    title: "Setting up an EC2 Instance",
+    description: "Launching an Amazon EC2 instance configuring a user data script to display in the instance browser.",
+    category: "EC2 Instance Configuration",
     steps: "8 steps",
     estimate: "12 min",
     state: "Ready",
     image: "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=1200&q=80",
-    detail: ``,
+    detail: ` Launching an EC2 Instance & Configuring a user data script
+
+Step 1    
+Confirm region is set to N. Virginia (us-east-1)
+
+Step 2
+Go to S3 -> General purpose buckets
+Click the cloud-first-steps bucket
+
+-> Objects -> checkbox to select user-data.txt
+
+This opens in a new browser tab -> Review the file contents => Download and save user-data.txt to your device
+
+Step 3
+Navigate to EC2 -> Launch Instance
+
+Name -> Webserver01 ~
+Application and OS Image -> Amazon Linux
+Amazon Machine Image -> Amazon Linux 2023 Kernel-6.1 AMI. 
+
+Click Compare Instance types -> choose t3.micro
+Click get advice and review different instance type requirements
+
+Confirm t3.micro is selected
+In this instance -> Proceed without key pair. 
+
+Step 4
+Network settings -> Edit
+VPC -> cloud-first-steps/LabVpc
+Subnet -> us-easr-1a Availability Zone
+Security Group name -> Lab-SG
+Description -> HTTP Security Group
+Type -> HTTP
+
+Configure storage
+1x -> 8 GiB -> gp3
+
+Step 5
+Click Advanced details -> Choose file -> upload the previously saved file user-data.txt
+
+Step 6
+Review Summary -> Launch Instance
+
+Review alert message
+
+Step 7
+Click View all instances
+
+The instance named Webserver01 will be in pending state before entering running state when ready for use
+Refresh, once running Click -> Public IPV4 DNS icon [] ** Not open address**
+
+In new browser type http: and paste DNS address. 
+Instance details will be available
+
+Step 8
+If connection timeout message appears check http: and not https: `,
     sequence: ["Disable the key", "Review CloudTrail use", "Rotate and validate"]
   },
   {
