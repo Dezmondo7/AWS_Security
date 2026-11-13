@@ -1,5 +1,122 @@
 
 export const projects = [
+   {
+    title: "Deploying RESTFUL API's",
+    category: "SECURITY",
+    steps: "17 steps",
+    estimate: "14 min",
+    state: "Ready",
+    image: "/deploying_restful_api.png",
+    detail: ` Deploying RESTful API
+    
+Step 1    
+Confirm region is set to N. Virginia (us-east-1)
+
+Step 2
+Go to Lambda -> Functions -> Create Function
+Runtime -> Python (latest version)
+
+Step 3
+In Custom Settings -> Additional settings -> turn on Custom execution role
+(this is an AWS Identity and Access Management IAM role that grants function permission to AWS services)
+
+Under Execution role -> select the correct role that grants the right permission -> save
+review -> create function
+
+Step 4
+Review the code witin the lambda function -> deploy
+
+Step 5 
+After success alert -> click Test -> Create new event
+Invocation -> Synchronous
+Event name -> FunctionName
+Event sharing -> Private
+Template -> API Gateway AWS Proxy
+
+Step 6
+Within Event JSON -> change the second parametre to the correct path
+"resource": "/desiredPath",
+
+Step 7
+Click save and then Test
+await for the response -> Executing function: succeeded
+
+Step 8
+Test events support iterative development by providing reusable test scenarious.
+Testing with parametres such as {id} vlidates that your function correctly extracts and processes dynamic values from incoming requests - a critical capability for RESTful API operations.
+
+Changes to JSON
+
+"resource": "/pets/{id}",
+
+PathParametres type
+"id": 1
+
+Step 9
+Click save and then Test
+await for the response -> Executing function: succeeded
+
+Step 10 
+Go to API Gateway -> Create an API
+REST API -> Build
+
+Step 11
+API Details -> New API
+API name
+Description
+API endpoint type -> Regional 
+Click -> Create API
+
+Step 12
+Resources represent the hierarchical structure of the API, mapping URL points that clients use to different functionality. 
+Under Resources click -> Create Resource
+Resource name -> the url path
+click -> Create Resource
+
+Step 13
+Click -> Create Method
+Method Type -> GET
+integration type -> Lambda function
+Turn on -> Lambda proxy integration
+
+Step 14
+For Lambda function, review to confirm that the us-east-1 AWS Region is selected.
+In the next search box, choose the labFunction ARN.
+You created this Lambda function in an earlier step.
+Click -> Create Method
+
+Step 15
+Click Test -> Test
+Review the response returned
+/name -Get method test results........should return the correct repsonse in body
+
+Step 16
+{id} is a dynamic resource path that captures variables from the URL. When a client requests /pets/3, API Gateway extracts the value and passes it to the Lambda function, which can then retrieve the specific identifier.
+Under Resources click /{id} -> Create method
+
+(repeated steps from above)
+Click -> Create Method
+Method Type -> GET
+integration type -> Lambda function
+Turn on -> Lambda proxy integration
+
+
+For Lambda function, review to confirm that the us-east-1 AWS Region is selected.
+In the next search box, choose the labFunction ARN.
+You created this Lambda function in an earlier step.
+Click -> Create Method
+
+Stage 17
+** In Test method make sure the Path id is filled in 
+Test Method Path id -> 1
+
+Click -> Test
+on success -> Deploy API
+Stage -> New Stage
+Add Stage name & Description
+Deploy `,
+    sequence: ["Block public access", "Review policy history", "Notify data owners"]
+  },
   {
     title: "Setting up an EC2 Instance",
     description: "Launching an Amazon EC2 instance configuring a user data script to display in the instance browser.",
@@ -87,16 +204,6 @@ If connection timeout message appears check http: and not https: `,
     image: "https://images.unsplash.com/photo-1518770660439-463ad161cf9?w=1200&q=80",
     detail: ` `,
     sequence: ["Create the new version", "Deploy and observe", "Revoke the old version"]
-  },
-  {
-    title: "Contain a public S3 bucket",
-    category: "SECURITY",
-    steps: "7 steps",
-    estimate: "14 min",
-    state: "Ready",
-    image: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&q=80",
-    detail: "Lock down unintended public access, identify the exposure window, and coordinate remediation with the bucket owner.",
-    sequence: ["Block public access", "Review policy history", "Notify data owners"]
   },
   {
     title: "Evidence collection for IR",
