@@ -2,19 +2,21 @@
 export const projects = [
   
    {
-    title: "Deploying RESTFUL API's",
+    title: "Deploying DynamoDB with RESTFUL API's",
     category: "SECURITY",
-    steps: "17 steps",
+    steps: "16 steps",
     estimate: "14 min",
     state: "Ready",
-    image: "/deploying_restful_api.png",
+    image: "/deploying_database_and_api.png",
     detail: ` Deploying API with Database
     
 Step 1    
 Confirm region is set to N. Virginia (us-east-1)
 
+
 Step 2
 Go to DynamoDB -> Tables -> click Create Table
+
 
 Step 3
 For Table name, type:
@@ -271,11 +273,13 @@ rental_app
 
 Click Save -> review success alert confirms.
 
+
 Step 6
 click -> Code
 The Lambda function code demonstrates a common pattern for API backends: routing different HTTP methods (GET, POST, PUT) to corresponding database operations (list, create, update.
 This single function handles multiple API endpointsm reducing operational complexity compared to managing seperate functions for each operation.
 The code can effectively create, update and list items in the DynamoDB table.
+
 
 Step 7
 On lines 178–182, select (highlight) and copy the code block.
@@ -365,6 +369,7 @@ At the bottom of the page, click Create method.
 
 In the Create resource pane, under the /locations resource, review to see that a new GET method is displayed
 
+
 Step 12
 On the Test tab, for Headers, type:
 Content-Type:application/json
@@ -380,6 +385,7 @@ Review the Response body.
 Review the remainder of the output.
 In the Create resource pane, click the /locations resource
 
+
 Step 13
 In the Methods section, click Create method.
 
@@ -390,6 +396,7 @@ For Lambda function, choose the Lambda function name that contains labFunction.
 Scroll down to the bottom of the page, and then click Create method.
 
 In the Create resource pane, under the /locations resource, review to see that a new POST method is now displayed.
+
 
 Step 14
 On the Test tab, for Headers, type:
@@ -420,6 +427,7 @@ Navigate to the rental_app table on the Amazon DynamoDB console.
 
 In the Items returned section, click the refresh icon.
 Review to see that the test from API Gateway successfully created a new location item.
+
 
 Step 16
 Navigate to the rental_app API on the API Gateway console.
