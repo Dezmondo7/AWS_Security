@@ -1,6 +1,170 @@
 
 export const projects = [
   
+    {
+    title: "Setting up CloudWatch Monitoring alerts",
+    category: "SECURITY",
+    steps: "16 steps",
+    estimate: "8 min",
+    state: "Ready",
+    image: "/resource-monitoring.png",
+    detail: ` CloudWatch Monitoring alert configuration
+    
+Step 1    
+Confirm region is set to N. Virginia (us-east-1)
+In this configuration we will be configuring a dashboard for memory utilization (mem_used).
+
+
+Step 2
+In EC2 Review identified instances and current monitoring metrics
+
+
+Step 3
+Search CloudWatch
+Navigate to Metrics -> Classic Metrics
+On the Browse tab, under Custom namespaces, click PowerPlantMetrics.
+
+
+Step 4
+In the PowerPlantMetrics search box type:
+mem and enter
+
+Click the metric grouping, PowerPlantMetrics > InstanceId, InstanceType.
+
+
+Step 5 
+In the Metrics search box, type:
+mem_used
+
+Review the data
+
+Choose the three checkboxes to select Server_1, Server_2, and Server_
+
+
+Step 6
+Above the graph, click Actions to expand the dropdown list.
+Choose Add to dashboard - Improved
+
+
+Step 7
+In the pop-up box, for Select a dashboard, click Create new
+
+For Create new dashboard, type:
+Power-Plant-Dashboard
+
+To create the new dashboard, click Create.
+
+
+Step 8
+For Widget type, on the dropdown list, choose Bar.
+
+For Customize widget title, type: 
+Servers Idle CPU Usage
+
+Click Add to dashboard
+
+
+Step 9
+For the displayed widget, drag the bottom right corner to change the display size.
+Review the graph.
+
+Note the server with the highest Memory Usage.
+
+To save the widget, click Save
+
+
+Step 10
+In the left navigation pane, click alarms.
+
+On the Alarms page, click Create alarm
+
+In the Specify metric and conditions step, click Select metric
+
+
+Step 11
+On the Browse tab, in the Metrics search box, type:
+
+mem_used
+
+and press Enter.
+
+Click the metric grouping, PowerPlantMetrics > InstanceId, InstanceType
+
+
+Step 12
+Choose the checkbox to select Server_1.
+
+You noted the high Mempry usage in this server earlier.
+
+Click Select metric
+
+
+Step 13
+In the Conditions section, for Threshold type, choose Static.
+
+For Define the alarm condition, choose Lower/Equal.
+For Define the threshold value, type: 20
+
+- The alarm is set when the Memory usage is at 3000000000M. This indicates that the Memory max requirement has been met.
+
+Click Next.
+
+
+Step 14
+ALarm State Trigger -> In Alarm
+
+For Send a notification to the following SNS topic, choose Create new topic.
+
+For Create a new topic, type: 
+High_MEM_USAGE
+
+For Email endpoints that will receive notification, type an email address to which you have access.
+
+You need to access this email to confirm your subscription for the SNS notification
+
+Click Create Topic
+You will receive a subscription confirmation from AWS Notification in your email. 
+
+In the email that you receive, click the Confirm subscription link
+Then click next
+
+
+In the Add name and description step, for Alarm name, type: 
+
+High-Mem-Usage
+
+For Alarm description, on the Edit tab, type a description that you like, such as System is creating high CPU usage - Alert!
+Click Nex
+
+
+Step 15
+In the Preview and create step, review the Metric and Conditions sections.
+
+You might need to scroll down to view the Conditions section.
+
+Scroll down to the bottom of the page, and then click Create alarm.
+
+
+Step 16
+Adding EC2 Reboot
+Go to ALarms -> High_Mem_Usage
+
+Actions -> Edit
+Specify metric and conditions - optional -> Next
+
+Configure actions - optional
+Scroll down to EC2 action 
+
+Alarm state trigger
+
+Take the following action...
+click Reboot this instance
+
+Next and save alarm
+
+`,
+    sequence: ["Block public access", "Review policy history", "Notify data owners"]
+  },
    {
     title: "Deploying DynamoDB with RESTFUL API's",
     category: "SECURITY",
