@@ -1,5 +1,173 @@
 
 export const projects = [
+      {
+    title: "Troubleshooting API Gateway connections and AWS Lambda via CloudWatch Logs",
+    category: "SECURITY",
+    steps: "16 steps",
+    estimate: "8 min",
+    state: "Ready",
+    image: "/single-page-app.png",
+    detail: ` CloudWatch Log Monitoring to configure API Gateway permissions
+    
+Step 1    
+Confirm region is set to N. Virginia (us-east-1)
+
+
+Step 2
+In the Static website hosting section, under Bucket website endpoint, click the copy icon to copy the provided website endpoint.
+To test access to the static website, click the same website endpoint.
+
+The website endpoint opens in a new browser tab (or window).
+
+
+Step 3
+In the new SPA browser tab, on the Configure your App card, review to see the empty field that is requesting an Amazon API Gateway URL.
+On the Communication Status card, review the current status.
+On the Vehicle App card, review the message.
+
+
+Step 4
+Return to the AWS Management Console in the other browser tab.
+
+Keep the current SPA page and browser tab open. You return to it later.
+
+In the top navigation bar search box, type:
+api
+
+In the search results, under Services, click API Gateway
+On the APIs page, click the API name that starts with lab-api-.
+
+
+Step 5 
+On the Resources page, review the API resources and methods.
+
+- If you see a new API Gateway console banner, click Try out the new console.
+
+In the left navigation pane, click Stages.
+
+In the Stages pane, click the prod stage.
+In the Stage details section, under Invoke URL, click the copy icon to copy the provided URL.
+
+
+Step 6
+Return to the SPA page in the other browser tab.
+On the Configure your App card, paste the invoke URL that you just copied.
+At the end of the pasted URL, type:
+
+/vehicles
+
+Click Load Backend Data.
+On the Communication Status card,review to see a 200 success response code
+
+
+Step 7
+In the Amazon API Gateway console browser tab, in the left navigation pane, click Resources.
+In the Resources pane, click the /vehicles resource.
+In the Methods section, click the GET method.
+
+
+Step 8
+Click the Method response tab, and then review the method response (not shown).
+
+The HTTP response is 200.
+
+Click the Integration request tab.
+Review the Integration request settings.
+
+- This is a mock integration.
+
+Click Edit
+
+
+Step 9
+For Integration type, choose Lambda function.
+Turn on Lambda proxy integration.
+For the Lambda function Region, choose us-east-1.
+In the Lambda function search box, choose the ARN that ends with find_all_vehicles.
+Scroll down to the bottom of the page, and then click Save
+
+
+Step 10
+In the success alert, review the message.
+Click Deploy 
+
+In the pop-up box, for Stage, choose prod.
+Click Deploy
+
+
+Step 11
+In the success alert, review the message.
+In the Stage details section, under Invoke URL, review the provided URL
+
+
+Step 12
+On the SPA page in the other browser tab, click Load Backend Data.
+Review the Communication Status output. 
+
+- If you do not get the Status:500 error, wait about a minute and try again
+
+
+
+Step 13
+In the Amazon API Gateway console browser tab, review the API ID.
+In the Logs and tracing section, click Edit.
+Review the Logs and tracing settings
+
+
+Step 14
+In the top navigation bar search box, type:
+cloudwatch
+
+In the search results, under Services, click CloudWatch.
+
+In the left navigation pane, under Logs, click Log Management.
+In the Log groups tab, click the log group name that starts with API-Gateway-Execution-Logs_.
+
+- This is the log group for your REST API ID and stage name.
+
+
+Step 15
+On the Log streams tab, click the most recent (top) log stream.
+
+Review the log and find the entry that shows the Lambda execution.
+Click to display details.
+Review the log details to determine why the Lambda function execution failed.
+Endpoint response body before..........
+
+
+Step 16
+In the top navigation bar search box, type:
+lambda
+
+In the search results, under Services, click Lambda.
+
+In the left navigation pane, click Functions.
+On the Functions page, click find_all_vehicles.
+
+
+Step 17
+On the Configuration tab, click Permissions.
+To review the services that the Lambda function can access, in the Resource summary section, choose Amazon CloudWatch Logs. 
+In the Execution role section, click Edit
+
+
+Step 18
+For Execution role, choose lab-find_all_vehicles_dynamodb-role from the dropdown list.
+Click Save
+
+
+Step 19
+In the success alert, review the message
+On the SPA page in the other browser tab, click Load Backend Data.
+Review the Communication Status output and the output to the mobile app
+
+GET 
+Https
+Status: 200
+
+`,
+    sequence: ["Block public access", "Review policy history", "Notify data owners"]
+  },
   
     {
     title: "Setting up CloudWatch Monitoring alerts",
